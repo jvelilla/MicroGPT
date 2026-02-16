@@ -39,9 +39,9 @@ feature -- Initialization
             from i := 1 until i > args.argument_count loop
                 arg := args.argument (i)
                 if arg.is_equal ("-interactive") then
-                    mode := "interactive"
+                    mode := {STRING_32} "interactive"
                 elseif arg.is_equal ("-test") then
-                    mode := "test"
+                    mode := {STRING_32} "test"
                 elseif arg.starts_with ("-") and i < args.argument_count then
                     val := args.argument (i + 1)
                     if is_option (arg) then 
@@ -84,9 +84,9 @@ feature -- Initialization
             elseif key.is_equal ("-seed") and val.is_integer then
                 seed := val.to_integer
             elseif key.is_equal ("-input") then
-                input_file := val.to_string_8
+                input_file := val
             elseif key.is_equal ("-mode") then
-                mode := val.to_string_8
+                mode := val
             end
         end
 
@@ -100,8 +100,8 @@ feature -- Access
     learning_rate: REAL_64
     max_iters: INTEGER
     batch_size: INTEGER
-    input_file: STRING
-    mode: STRING
+    input_file: STRING_32
+    mode: STRING_32
     seed: INTEGER
 
 end

@@ -9,16 +9,24 @@ create
 
 feature -- Initialization
 
-    make (texts: LIST [STRING])
+    make (texts: LIST [READABLE_STRING_GENERAL])
         local
-            chars: LINKED_SET [CHARACTER]
-            sorted_chars: SORTED_TWO_WAY_LIST [CHARACTER]
+            chars: LINKED_SET [CHARACTER_32]
+            sorted_chars: SORTED_TWO_WAY_LIST [CHARACTER_32]
             i: INTEGER
+            s: READABLE_STRING_GENERAL
         do
             create chars.make
             across texts as t loop
-                across t as c loop
-                    chars.put (c)
+                -- Iterate using index
+                s := t
+                from
+                    i := 1
+                until
+                    i > s.count
+                loop
+                     chars.put (s.item (i).to_character_32)
+                     i := i + 1
                 end
             end
             
@@ -55,39 +63,46 @@ feature -- Initialization
             
             -- BOS token
             bos_token_id := i
-            stoi.put (bos_token_id, '.') -- Use '.' to represent BOS/PAD if needed for visualization
-            itos.put ('.', bos_token_id)
+            stoi.put (bos_token_id, {CHARACTER_32} '.') -- Use '.' to represent BOS/PAD if needed for visualization
+            itos.put ({CHARACTER_32} '.', bos_token_id)
         end
 
 feature -- Access
 
     vocab_size: INTEGER
-    stoi: HASH_TABLE [INTEGER, CHARACTER]
-    itos: HASH_TABLE [CHARACTER, INTEGER]
+    stoi: HASH_TABLE [INTEGER, CHARACTER_32]
+    itos: HASH_TABLE [CHARACTER_32, INTEGER]
     bos_token_id: INTEGER
 
 feature -- Operations
 
-    encode (text: STRING): ARRAY [INTEGER]
+    encode (text: READABLE_STRING_GENERAL): ARRAY [INTEGER]
+            -- Encode `text` into a sequence of token IDs.
         local
             res: ARRAYED_LIST [INTEGER]
+            i: INTEGER
         do
             create res.make (text.count + 2)
-            res.extend (bos_token_id)
-            across text as c loop
-                if stoi.has (c) then
-                    res.extend (stoi.item (c))
+            from
+                i := 1
+            until
+                i > text.count
+            loop
+                if stoi.has (text.item (i).to_character_32) then
+                    res.extend (stoi.item (text.item (i).to_character_32))
                 else
-                    res.extend (bos_token_id) -- fallback?
+                    res.extend (bos_token_id)
                 end
+                i := i + 1
             end
             res.extend (bos_token_id)
             Result := res.to_array
         end
         
-    decode (indices: ARRAY [INTEGER]): STRING
+    decode (indices: ARRAY [INTEGER]): STRING_32
+            -- Decode sequence of `indices` back to text.
         local
-            res: STRING
+            res: STRING_32
         do
             create res.make_empty
             across indices as idx loop

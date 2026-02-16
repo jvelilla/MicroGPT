@@ -17,10 +17,10 @@ feature -- Initialization
         do
             config := a_config
             create tokenizer.make (read_docs)
-            print ("Vocab size: " + tokenizer.vocab_size.out + "%N")
+            io.put_string_32 ({STRING_32} "Vocab size: " + tokenizer.vocab_size.out.to_string_32 + {STRING_32} "%N")
             
             create gpt.make (tokenizer.vocab_size, config.n_embd, config.n_head, config.n_layer, config.block_size, config.dropout)
-            print ("Model created. Parameters: " + gpt.parameters.count.out + "%N")
+            io.put_string_32 ({STRING_32} "Model created. Parameters: " + gpt.parameters.count.out.to_string_32 + {STRING_32} "%N")
             
             create adam.make (gpt.parameters, config.learning_rate, 0.9, 0.999, 1.0e-8)
         end
@@ -32,27 +32,27 @@ feature -- Access
     tokenizer: TOKENIZER
     adam: ADAM
     
-    docs: ARRAYED_LIST [STRING]
+    docs: ARRAYED_LIST [STRING_32]
 
 feature -- Operations
 
     train
         local
             iter: INTEGER
-            text: STRING
+            text: STRING_32
             data: ARRAY [INTEGER]
             xb, yb: ARRAY [INTEGER]
             logits_loss: TUPLE [logits: LIST [LIST [VALUE]]; loss: detachable VALUE]
             loss: VALUE
         do
-            print ("Starting training for " + config.max_iters.out + " steps...%N")
+            io.put_string_32 ({STRING_32} "Starting training for " + config.max_iters.out.to_string_32 + {STRING_32} " steps...%N")
             
             from iter := 0 until iter >= config.max_iters loop
                 -- 1. Sample document (Sequential for now)
                 if docs.count > 0 then
                     text := docs [(iter \\ docs.count) + 1]
                 else
-                    text := "Empty"
+                    text := {STRING_32} "Empty"
                 end
                 
                 data := tokenizer.encode (text)
@@ -70,7 +70,7 @@ feature -- Operations
                         loss := l
                         
                         -- Log every step
-                        print ("step " + (iter + 1).out + " / " + config.max_iters.out + " | loss " + loss.data.out + "%N")
+                        io.put_string_32 ({STRING_32} "step " + (iter + 1).out.to_string_32 + {STRING_32} " / " + config.max_iters.out.to_string_32 + {STRING_32} " | loss " + loss.data.out.to_string_32 + {STRING_32} "%N")
                         
                         loss.backward
                         adam.step
@@ -90,7 +90,7 @@ feature -- Operations
             gen_res: ARRAYED_LIST [INTEGER]
             start_token: INTEGER
         do
-            print ("%N--- inference (sampling) ---%N")
+            io.put_string_32 ({STRING_32} "%N--- inference (sampling) ---%N")
             start_token := tokenizer.bos_token_id
             
             from iter := 1 until iter > 20 loop
@@ -100,44 +100,44 @@ feature -- Operations
                      -- gen_res.start
                      -- gen_res.remove -- Remove BOS if first
                  end
-                 print ("sample " + iter.out + ": " + tokenizer.decode (gen_res.to_array) + "%N")
+                 io.put_string_32 ({STRING_32} "sample " + iter.out.to_string_32 + {STRING_32} ": " + tokenizer.decode (gen_res.to_array) + {STRING_32} "%N")
                  iter := iter + 1
             end
         end
 
     interactive_mode
         local
-            input: STRING
+            input: STRING_32
 
             gen_idx: ARRAY [INTEGER]
             gen_res: ARRAYED_LIST [INTEGER]
         do
-            print ("%N--- Interactive Mode (type 'exit' to quit) ---%N")
+            io.put_string_32 ({STRING_32} "%N--- Interactive Mode (type 'exit' to quit) ---%N")
             
             from 
-                print ("> ")
+                io.put_string_32 ({STRING_32} "> ")
                 io.read_line
             until 
-                io.last_string.is_equal ("exit")
+                io.last_string.to_string_32.is_equal ({STRING_32} "exit")
             loop
-                input := io.last_string.twin
+                input := io.last_string.to_string_32.twin
                 gen_idx := tokenizer.encode (input)
                 
                 gen_res := gpt.generate (gen_idx, 50, 0.7, tokenizer.bos_token_id)
-                print (tokenizer.decode (gen_res.to_array) + "%N")
+                io.put_string_32 (tokenizer.decode (gen_res.to_array) + {STRING_32} "%N")
                 
-                print ("> ")
+                io.put_string_32 ({STRING_32} "> ")
                 io.read_line
             end
         end
 
 feature {NONE} -- Implementation
 
-    read_docs: ARRAYED_LIST [STRING]
+    read_docs: ARRAYED_LIST [STRING_32]
         local
             f: PLAIN_TEXT_FILE
-            l: LINKED_LIST [STRING]
-            line: STRING
+            l: LINKED_LIST [STRING_32]
+            line: STRING_32
         do
             create f.make_open_read (config.input_file)
             create l.make
@@ -147,7 +147,7 @@ feature {NONE} -- Implementation
                 until
                     f.exhausted
                 loop
-                    line := f.last_string.twin
+                    line := f.last_string.to_string_32
                     line.right_adjust
                     if not line.is_empty then
                         l.extend (line)
@@ -156,7 +156,7 @@ feature {NONE} -- Implementation
                 end
                 f.close
             else
-                print ("Error: Input file not found: " + config.input_file + "%N")
+                io.put_string_32 ({STRING_32} "Error: Input file not found: " + config.input_file + {STRING_32} "%N")
             end
             create Result.make_from_iterable (l)
             docs := Result
@@ -176,23 +176,23 @@ feature -- Persistence
                    f.put_string (p.data.out + "%N")
                end
                f.close
-               print ("Checkpoint saved to model.ckpt%N")
+               io.put_string_32 ({STRING_32} "Checkpoint saved to model.ckpt%N")
             else
-               print ("Error: Cannot write to model.ckpt%N")
+               io.put_string_32 ({STRING_32} "Error: Cannot write to model.ckpt%N")
             end
         end
 
     load_checkpoint
         local
             f: PLAIN_TEXT_FILE
-            line: STRING
+            line: STRING_32
             params: LIST [VALUE]
             p: VALUE
             count: INTEGER
         do
             create f.make_open_read ("model.ckpt")
             if f.exists and f.is_readable then
-                print ("Loading checkpoint from model.ckpt...%N")
+                io.put_string_32 ({STRING_32} "Loading checkpoint from model.ckpt...%N")
                 params := gpt.parameters
                 from 
                     f.read_line
@@ -200,7 +200,7 @@ feature -- Persistence
                 until 
                     f.exhausted or params.after 
                 loop
-                    line := f.last_string.twin
+                    line := f.last_string.to_string_32
                     line.left_adjust
                     line.right_adjust
                     if not line.is_empty and line.is_double then
@@ -212,9 +212,9 @@ feature -- Persistence
                     f.read_line
                 end
                 f.close
-                print ("Loaded " + count.out + " parameters.%N")
+                io.put_string_32 ({STRING_32} "Loaded " + count.out.to_string_32 + {STRING_32} " parameters.%N")
             else
-                print ("Warning: Checkpoint not found. Starting with random initialization.%N")
+                io.put_string_32 ({STRING_32} "Warning: Checkpoint not found. Starting with random initialization.%N")
             end
         end
 
@@ -258,7 +258,7 @@ feature -- Persistence
             Result := res.to_array
         end
         
-    shuffle (list: ARRAYED_LIST [STRING])
+    shuffle (list: ARRAYED_LIST [STRING_32])
         local
             rng: RANDOM
             i, j: INTEGER
