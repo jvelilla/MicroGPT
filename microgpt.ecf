@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<system xmlns="http://www.eiffel.com/developers/xml/configuration-1-23-0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.eiffel.com/developers/xml/configuration-1-23-0 http://www.eiffel.com/developers/xml/configuration-1-23-0.xsd" name="microgpt" uuid="70D06E76-7815-4923-8320-724376123456" library_target="microgpt">
+	<target name="microgpt">
+		<root all_classes="true"/>
+		<file_rule>
+			<exclude>/CVS$</exclude>
+			<exclude>/EIFGENs$</exclude>
+			<exclude>/\.git$</exclude>
+			<exclude>/\.svn$</exclude>
+		</file_rule>
+		<option warning="warning">
+			<assertions precondition="true" postcondition="true" check="true" invariant="true" loop="true" supplier_precondition="true"/>
+		</option>
+		<setting name="console_application" value="true"/>
+		<setting name="dead_code_removal" value="feature"/>
+		<capability>
+			<concurrency support="none"/>
+			<void_safety support="none"/>
+		</capability>
+		<library name="base" location="$ISE_LIBRARY\library\base\base.ecf"/>
+		<library name="time" location="$ISE_LIBRARY\library\time\time.ecf"/>
+		<cluster name="src" location=".\src\" recursive="true"/>
+	</target>
+    
+	<target name="app" extends="microgpt">
+		<root class="APPLICATION" feature="make"/>
+		<setting name="console_application" value="true"/>
+		<cluster name="app" location=".\app\" recursive="true"/>
+	</target>
+
+	<target name="tests" extends="microgpt">
+		<root class="TEST_SUITE" feature="make"/>
+		<setting name="console_application" value="true"/>
+		<cluster name="tests" location=".\tests\" recursive="true"/>
+	</target>
+</system>
