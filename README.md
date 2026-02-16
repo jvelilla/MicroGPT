@@ -22,7 +22,7 @@ This is a minimalist implementation of the algorithm behind models like ChatGPT.
 ## 🛠 Quick Start
 
 ### Prerequisites
-- [EiffelStudio](https://www.eiffel.com/) (Version 25.12 or later recommended)
+- [EiffelStudio](https://www.eiffel.com/) (Version 25.12)
 
 ### Build and Run
 
@@ -93,5 +93,3 @@ sample 1: ...
 3.  **Backward Pass** (`loss.backward`): Gradients are propagated backwards from the loss to all parameters using the chain rule.
 4.  **Update** (`adam.step`): Parameters are adjusted to minimize the loss.
 
-## ⚖️ License
-MIT
