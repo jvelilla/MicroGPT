@@ -15,7 +15,7 @@ feature -- Initialization
 
 feature -- Access
 
-    load_tensor (a_path: PATH; key: READABLE_STRING_GENERAL): detachable ET_TENSOR [REAL_32]
+    load_tensor (a_path: PATH; key: READABLE_STRING_GENERAL): detachable ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
             -- Load a tensor by key from the safetensors file.
         local
             file: RAW_FILE
@@ -72,7 +72,7 @@ feature -- Access
 
 feature {NONE} -- Implementation
 
-    create_tensor_from_file (f: RAW_FILE; shape: ARRAY [INTEGER]; byte_len: INTEGER): ET_TENSOR [REAL_32]
+    create_tensor_from_file (f: RAW_FILE; shape: ARRAY [INTEGER]; byte_len: INTEGER): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
         local
             mp: MANAGED_POINTER
         do

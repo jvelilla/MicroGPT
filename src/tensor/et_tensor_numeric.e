@@ -2,7 +2,7 @@ note
 	description: "Deferred strategy for type-specific tensor operations."
 
 deferred class
-	ET_TENSOR_NUMERIC [G -> {NUMERIC, COMPARABLE}]
+	ET_TENSOR_NUMERIC [G -> ET_TENSOR_ELEMENT]
 
 feature -- Access
 
@@ -33,6 +33,11 @@ feature -- Conversion
 		deferred
 		end
 
+	to_real_64 (v: G): REAL_64
+			-- Convert `v` to REAL_64 for math operations.
+		deferred
+		end
+
 feature -- Pointer Operations
 
 	put (a_ptr: MANAGED_POINTER; a_offset: INTEGER; v: G)
@@ -42,6 +47,24 @@ feature -- Pointer Operations
 
 	read (a_ptr: MANAGED_POINTER; a_offset: INTEGER): G
 			-- Read value from pointer at offset.
+		deferred
+		end
+
+feature -- Operations
+
+	add_elements (x, y: G): G
+		deferred
+		end
+
+	sub_elements (x, y: G): G
+		deferred
+		end
+
+	mul_elements (x, y: G): G
+		deferred
+		end
+
+	div_elements (x, y: G): G
 		deferred
 		end
 

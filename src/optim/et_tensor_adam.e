@@ -2,7 +2,7 @@ note
     description: "Adam Optimizer for Tensors"
 
 class
-    ET_TENSOR_ADAM [G -> {NUMERIC, COMPARABLE}]
+    ET_TENSOR_ADAM [G -> ET_TENSOR_ELEMENT]
 
 create
     make

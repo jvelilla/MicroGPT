@@ -9,14 +9,16 @@ feature -- Access
 	element_size (a_type_id: INTEGER): INTEGER
 			-- Size in bytes for the given type ID.
 		do
-			if a_type_id = ({REAL_32}).type_id then
+			if a_type_id = ({ET_NUMERIC_ELEMENT [REAL_32]}).type_id then
 				Result := 4
-			elseif a_type_id = ({REAL_64}).type_id then
+			elseif a_type_id = ({ET_NUMERIC_ELEMENT [REAL_64]}).type_id then
 				Result := 8
-			elseif a_type_id = ({INTEGER_32}).type_id then
+			elseif a_type_id = ({ET_NUMERIC_ELEMENT [INTEGER_32]}).type_id then
 				Result := 4
-			elseif a_type_id = ({INTEGER_64}).type_id then
+			elseif a_type_id = ({ET_NUMERIC_ELEMENT [INTEGER_64]}).type_id then
 				Result := 8
+			elseif a_type_id = ({ET_BOOLEAN_ELEMENT}).type_id then
+				Result := 1
 			else
 				-- Fallback or error
 				Result := 0
@@ -26,10 +28,11 @@ feature -- Access
 	is_supported_type (a_type_id: INTEGER): BOOLEAN
 			-- Is the type supported by TENSOR?
 		do
-			Result := a_type_id = ({REAL_32}).type_id or else
-					  a_type_id = ({REAL_64}).type_id or else
-					  a_type_id = ({INTEGER_32}).type_id or else
-					  a_type_id = ({INTEGER_64}).type_id
+			Result := a_type_id = ({ET_NUMERIC_ELEMENT [REAL_32]}).type_id or else
+					  a_type_id = ({ET_NUMERIC_ELEMENT [REAL_64]}).type_id or else
+					  a_type_id = ({ET_NUMERIC_ELEMENT [INTEGER_32]}).type_id or else
+					  a_type_id = ({ET_NUMERIC_ELEMENT [INTEGER_64]}).type_id or else
+					  a_type_id = ({ET_BOOLEAN_ELEMENT}).type_id
 		end
 
 	zero_value (a_type_id: INTEGER): ANY
@@ -136,6 +139,22 @@ feature -- Pointer Operations
 	read_integer_64 (a_ptr: MANAGED_POINTER; a_offset: INTEGER): INTEGER_64
 		do
 			Result := a_ptr.read_integer_64 (a_offset)
+		end
+
+	put_boolean (a_ptr: MANAGED_POINTER; a_offset: INTEGER; v: BOOLEAN)
+		local
+			b: INTEGER_8
+		do
+			if v then b := 1 else b := 0 end
+			a_ptr.put_integer_8 (b, a_offset)
+		end
+
+	read_boolean (a_ptr: MANAGED_POINTER; a_offset: INTEGER): BOOLEAN
+		local
+			b: INTEGER_8
+		do
+			b := a_ptr.read_integer_8 (a_offset)
+			Result := b /= 0
 		end
 
 end

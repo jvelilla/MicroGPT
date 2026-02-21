@@ -45,8 +45,8 @@ feature -- Access
     -- Note: We use TENSOR [REAL_32] instead of REAL_64 for memory efficiency.
     -- The cache grows linearly with sequence length, so halving the memory usage is significant.
     -- Most deep learning inference uses float32 or lower precision.
-    k_cache: detachable ET_TENSOR [REAL_32]
-    v_cache: detachable ET_TENSOR [REAL_32]
+    k_cache: detachable ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+    v_cache: detachable ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
     cache_pos: INTEGER
     
     init_cache (max_seq_len: INTEGER)
@@ -161,9 +161,10 @@ feature {NONE} -- Internal
             inv_sum: ET_VALUE
             
             -- Cache locals
-            l_k_cache, l_v_cache: ET_TENSOR [REAL_32]
+            l_k_cache, l_v_cache: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
             idx_k, idx_v: ARRAY [INTEGER]
-            cached_val: REAL_32
+            cached_val: ET_NUMERIC_ELEMENT [REAL_32]
+            l_elem: ET_NUMERIC_ELEMENT [REAL_32]
             
             cache_len: INTEGER
             seq_len_total: INTEGER -- T_len + cache_pos
@@ -194,12 +195,13 @@ feature {NONE} -- Internal
                     from i := 1 until i > head_size loop
                         -- Store k
                         val := k_h [t1] [i]
-                        l_k_cache.put ({REAL_32} 0.0 + val.data.truncated_to_real, <<h_idx, cache_pos + t1, i>>)
+                        l_elem.set_item ({REAL_32} 0.0 + val.data.truncated_to_real)
+                        l_k_cache.put (l_elem, <<h_idx, cache_pos + t1, i>>)
                         
                         -- Store v
                         val := v_h [t1] [i]
-                        l_v_cache.put ({REAL_32} 0.0 + val.data.truncated_to_real, <<h_idx, cache_pos + t1, i>>)
-                        
+                        l_elem.set_item ({REAL_32} 0.0 + val.data.truncated_to_real)
+                        l_v_cache.put (l_elem, <<h_idx, cache_pos + t1, i>>)                      
                         i := i + 1
                     end
                     t1 := t1 + 1
@@ -214,7 +216,7 @@ feature {NONE} -- Internal
                     create {ARRAYED_LIST [ET_VALUE]} item_arr.make (head_size)
                     from i := 1 until i > head_size loop
                        cached_val := l_k_cache.item (<<h_idx, t1, i>>)
-                       item_arr.extend (create {ET_VALUE}.make (cached_val.to_double))
+                       item_arr.extend (create {ET_VALUE}.make (cached_val.item.to_double))
                        i := i + 1
                     end
                     k_seq.extend (item_arr)
@@ -222,7 +224,7 @@ feature {NONE} -- Internal
                     create {ARRAYED_LIST [ET_VALUE]} item_arr.make (head_size)
                     from i := 1 until i > head_size loop
                        cached_val := l_v_cache.item (<<h_idx, t1, i>>)
-                       item_arr.extend (create {ET_VALUE}.make (cached_val.to_double))
+                       item_arr.extend (create {ET_VALUE}.make (cached_val.item.to_double))
                        i := i + 1
                     end
                     v_seq.extend (item_arr)

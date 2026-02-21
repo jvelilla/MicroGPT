@@ -9,14 +9,14 @@ feature -- Tests
     from_existing_data
             -- 1.1 From Existing Data Structures
         local
-            x: ET_TENSOR [INTEGER]
+            x: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
             l_data: ARRAY [INTEGER]
         do
             print ("%N[1.1] From Existing Data Structures ( List -> Tensor)%N")
 
             -- x = torch.tensor([1, 2, 3])
             l_data := <<1, 2, 3>>
-            create x.make_from_iterable (l_data)
+            create x.make_from_integer_array (l_data)
 
             print ("FROM ITERABLE: " + x.out + "%N")
             print ("TENSOR DIM: " + x.dim.out + "%N")
@@ -27,9 +27,9 @@ feature -- Tests
     with_predefined_values
             -- 1.2 With Predefined Values
         local
-            zeros: ET_TENSOR [REAL_32]
-            ones: ET_TENSOR [REAL_32]
-            rand: ET_TENSOR [REAL_32]
+            zeros: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            ones: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            rand: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
         do
             print ("%NWith Predefined Values (Zeros)%N")
 
@@ -64,7 +64,7 @@ feature -- Tests
     checking_tensor_dimensions
             -- 2.1 Checking a Tensor's Dimensions
         local
-            x: ET_TENSOR [INTEGER]
+            x: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
             l_data: ARRAY [INTEGER]
         do
             print ("%N[2.1] Checking a Tensor's Dimensions%N")
@@ -73,7 +73,7 @@ feature -- Tests
             -- x = torch.tensor([[1, 2, 3],
             --                   [4, 5, 6]])
             l_data := <<1, 2, 3, 4, 5, 6>>
-            create x.make_from_iterable (l_data)
+            create x.make_from_integer_array (l_data)
             x := x.reshape (<<2, 3>>)
 
             print ("ORIGINAL TENSOR:%N%N")
@@ -84,7 +84,7 @@ feature -- Tests
     changing_tensor_dimensions
             -- 2.2 Changing a Tensor's Dimensions
         local
-            x, l_expanded, local_squeezed: ET_TENSOR [INTEGER]
+            x, l_expanded, local_squeezed: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
             l_data: ARRAY [INTEGER]
         do
             print ("%N[2.2] Changing a Tensor's Dimensions%N")
@@ -93,7 +93,7 @@ feature -- Tests
             -- x = torch.tensor([[1, 2, 3],
             --                   [4, 5, 6]])
             l_data := <<1, 2, 3, 4, 5, 6>>
-            create x.make_from_iterable (l_data)
+            create x.make_from_integer_array (l_data)
             x := x.reshape (<<2, 3>>)
 
             print ("ORIGINAL TENSOR:%N%N")
@@ -126,7 +126,7 @@ feature -- Tests
     restructuring_tensor_dimensions
             -- 2.3 Restructuring
         local
-            x, reshaped, transposed: ET_TENSOR [INTEGER]
+            x, reshaped, transposed: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
             l_data: ARRAY [INTEGER]
         do
             print ("%N[2.3] Restructuring%N")
@@ -135,7 +135,7 @@ feature -- Tests
             -- x = torch.tensor([[1, 2, 3],
             --                   [4, 5, 6]])
             l_data := <<1, 2, 3, 4, 5, 6>>
-            create x.make_from_iterable (l_data)
+            create x.make_from_integer_array (l_data)
             x := x.reshape (<<2, 3>>)
 
             print ("ORIGINAL TENSOR:%N%N")
@@ -163,16 +163,16 @@ feature -- Tests
     combining_tensors
             -- 2.4 Combining Tensors
         local
-            tensor_a, tensor_b, concatenated_tensors: ET_TENSOR [INTEGER]
+            tensor_a, tensor_b, concatenated_tensors: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
         do
             print ("%N[2.4] Combining Tensors%N")
             
             -- x = torch.tensor([[1, 2], [3, 4]])
-            create tensor_a.make_from_iterable (<<1, 2, 3, 4>>)
+            create tensor_a.make_from_integer_array (<<1, 2, 3, 4>>)
             tensor_a := tensor_a.reshape (<<2, 2>>)
 
             -- y = torch.tensor([[5, 6], [7, 8]])
-            create tensor_b.make_from_iterable (<<5, 6, 7, 8>>)
+            create tensor_b.make_from_integer_array (<<5, 6, 7, 8>>)
             tensor_b := tensor_b.reshape (<<2, 2>>)
             
             print ("TENSOR A:%N%N" + tensor_a.out + "%N")
@@ -190,7 +190,7 @@ feature -- Tests
     accessing_elements
             -- 3.1 Accessing Elements
         local
-            x, second_row, last_row, single_element_tensor: ET_TENSOR [INTEGER]
+            x, second_row, last_row, single_element_tensor: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
             value: INTEGER
             l_data: ARRAY [INTEGER]
         do
@@ -198,7 +198,7 @@ feature -- Tests
 
             -- Create a 3x4 tensor
             l_data := <<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12>>
-            create x.make_from_iterable (l_data)
+            create x.make_from_integer_array (l_data)
             x := x.reshape (<<3, 4>>)
             
             print ("ORIGINAL TENSOR:%N%N")
@@ -228,7 +228,7 @@ feature -- Tests
             print ("---------------------------------------------%N")
             
             -- Extract the value from a single-element tensor as a standard Eiffel number
-            value := single_element_tensor.item_scalar
+            value := single_element_tensor.item_scalar.item
             
             print ("%N.item_scalar() NUMBER EXTRACTED: " + value.out + "%N")
             print ("TYPE: INTEGER%N")
@@ -237,14 +237,14 @@ feature -- Tests
     slicing_tensors
             -- 3.2 Slicing Tensors
         local
-            x, first_two_rows, third_column, every_other_col, last_col, combined: ET_TENSOR [INTEGER]
+            x, first_two_rows, third_column, every_other_col, last_col, combined: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
             l_data: ARRAY [INTEGER]
         do
             print ("%N[3.2] Slicing Tensors%N")
 
             -- Create a 3x4 tensor
             l_data := <<1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12>>
-            create x.make_from_iterable (l_data)
+            create x.make_from_integer_array (l_data)
             x := x.reshape (<<3, 4>>)
             
             print ("ORIGINAL TENSOR:%N%N")
@@ -287,16 +287,16 @@ feature -- Tests
     arithmetic_operations
             -- 4.1 Arithmetic
         local
-            a, b, element_add, element_mul, dot_product: ET_TENSOR [INTEGER]
+            a, b, element_add, element_mul, dot_product: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
         do
             print ("%N[4.1] Arithmetic%N")
 
             -- a = torch.tensor([1, 2, 3])
-            create a.make_from_iterable (<<1, 2, 3>>)
+            create a.make_from_integer_array (<<1, 2, 3>>)
             a := a.reshape (<<3>>)
 
             -- b = torch.tensor([4, 5, 6])
-            create b.make_from_iterable (<<4, 5, 6>>)
+            create b.make_from_integer_array (<<4, 5, 6>>)
             b := b.reshape (<<3>>)
 
             print ("TENSOR A: " + a.out + "%N")
@@ -330,16 +330,16 @@ feature -- Tests
     broadcasting_tensors
             -- 4.2 Broadcasting
         local
-            a, b, c: ET_TENSOR [INTEGER]
+            a, b, c: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
         do
             print ("%N[4.2] Broadcasting%N")
 
             -- a = torch.tensor([1, 2, 3])
-            create a.make_from_iterable (<<1, 2, 3>>)
+            create a.make_from_integer_array (<<1, 2, 3>>)
             a := a.reshape (<<3>>)
 
             -- b = torch.tensor([[1], [2], [3]])
-            create b.make_from_iterable (<<1, 2, 3>>)
+            create b.make_from_integer_array (<<1, 2, 3>>)
             b := b.reshape (<<3, 1>>)
             
             print ("TENSOR A: " + a.out + "%N")
@@ -358,28 +358,32 @@ feature -- Tests
     logic_and_comparisons
             -- 4.2 Logic & Comparisons
         local
-            temperatures: ET_TENSOR [INTEGER]
-            is_hot, is_cool, is_35_degrees: ET_TENSOR [INTEGER]
-            is_morning, is_raining: ET_TENSOR [INTEGER]
-            morning_and_raining, morning_or_raining: ET_TENSOR [INTEGER]
+            temperatures: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
+            is_hot, is_cool, is_35_degrees: ET_TENSOR [ET_BOOLEAN_ELEMENT]
+            is_morning, is_raining: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
+            morning_and_raining, morning_or_raining: ET_TENSOR [ET_BOOLEAN_ELEMENT]
+            l_scalar: ET_NUMERIC_ELEMENT [INTEGER_32]
         do
             print ("%N[4.2] Logic & Comparisons%N")
 
             -- temperatures = torch.tensor([20, 35, 19, 35, 42])
-            create temperatures.make_from_iterable (<<20, 35, 19, 35, 42>>)
+            create temperatures.make_from_integer_array (<<20, 35, 19, 35, 42>>)
             temperatures := temperatures.reshape (<<5>>)
 
             print ("TEMPERATURES: " + temperatures.out + "%N")
             print ("--------------------------------------------------%N")
 
             -- Use '>' (greater than) to find temperatures above 30
-            is_hot := temperatures > 30
+            l_scalar.set_item (30)
+            is_hot := temperatures > l_scalar
 
             -- Use '<=' (less than or equal to) to find temperatures 20 or below
-            is_cool := temperatures <= 20
+            l_scalar.set_item (20)
+            is_cool := temperatures <= l_scalar
 
             -- Use '|==' (equal to) to find temperatures exactly equal to 35
-            is_35_degrees := temperatures |== 35
+            l_scalar.set_item (35)
+            is_35_degrees := temperatures |== l_scalar
 
             print ("%NHOT (> 30 DEGREES): " + is_hot.out + "%N")
             print ("COOL (<= 20 DEGREES): " + is_cool.out + "%N")
@@ -391,10 +395,10 @@ feature -- Tests
 
             -- Use '&' (AND) to find when it's both morning and raining
             -- Both are 1 (True) or 0 (False)
-            create is_morning.make_from_iterable (<<1, 0, 0, 1>>)
+            create is_morning.make_from_integer_array (<<1, 0, 0, 1>>)
             is_morning := is_morning.reshape (<<4>>)
             
-            create is_raining.make_from_iterable (<<0, 0, 1, 1>>)
+            create is_raining.make_from_integer_array (<<0, 0, 1, 1>>)
             is_raining := is_raining.reshape (<<4>>)
 
             print ("IS MORNING: " + is_morning.out + "%N")
@@ -411,13 +415,15 @@ feature -- Tests
     statistics
             -- 4.3 Statistics
         local
-            data: ET_TENSOR [REAL_64]
-            data_mean, data_std: ET_TENSOR [REAL_64]
+            data: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            data_mean, data_std: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            l_float_data: ARRAY [REAL_64]
         do
             print ("%N[4.3] Statistics%N")
 
             -- data = torch.tensor([10.0, 20.0, 30.0, 40.0, 50.0])
-            create data.make_from_iterable (<<10.0, 20.0, 30.0, 40.0, 50.0>>)
+            l_float_data := <<10.0, 20.0, 30.0, 40.0, 50.0>>
+            create data.make_from_real_64_array (l_float_data)
             data := data.reshape (<<5>>)
 
             print ("DATA: " + data.out + "%N")
