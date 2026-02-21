@@ -1653,37 +1653,44 @@ feature -- Matrix Operations
 
 	matmul (other: ET_TENSOR [G]): ET_TENSOR [G]
 			-- Matrix multiplication with broadcasting, or dot product for 1D tensors.
-			-- Supports: (n) x (n) -> ()
-			-- Supports: (..., n, m) x (..., m, p) -> (..., n, p)
+			-- Supports: (n) x (n)      -> ()      1D dot product
+			-- Supports: (n,m) x (m,)   -> (n,)   matrix-vector product
+			-- Supports: (...,n,m) x (...,m,p) -> (...,n,p)  batched matmul with broadcast
 		require
-			valid_operands: (shape.count >= 2 and other.shape.count >= 2) or else (shape.count = 1 and other.shape.count = 1)
-			compatible_inner: (shape.count >= 2 and other.shape.count >= 2 implies shape [shape.count] = other.shape [other.shape.count - 1]) or else (shape.count = 1 and other.shape.count = 1 implies shape [1] = other.shape [1])
+			valid_operands: shape.count >= 1 and other.shape.count >= 1
+			compatible_inner:
+				-- 1D dot: (n) x (n)
+				(shape.count = 1 and other.shape.count = 1 implies shape [1] = other.shape [1])
+				or else
+				-- Matrix-vector: (n,m) x (m,)
+				(shape.count >= 2 and other.shape.count = 1 implies shape [shape.count] = other.shape [1])
+				or else
+				-- General matmul: (...,n,m) x (...,m,p)
+				(shape.count >= 2 and other.shape.count >= 2 implies shape [shape.count] = other.shape [other.shape.count - 1])
 		local
 			l_new_shape: ARRAY [INTEGER]
 			l_res: ET_TENSOR [G]
 			l_children: ARRAYED_LIST [ET_TENSOR [G]]
-			l_common_dims: INTEGER
 			l_dot: G
-			i: INTEGER
-			l_idx: ARRAY [INTEGER]
-			do
+			i, j: INTEGER
+			l_idx_a, l_idx_b: ARRAY [INTEGER]
+		do
 			if shape.count = 1 and other.shape.count = 1 then
-				-- 1D dot product
-				create l_idx.make_filled (1, 1, 1)
+				-- ── Case 1: 1D dot product (n,) x (n,) → scalar ()
+				create l_idx_a.make_filled (1, 1, 1)
 				from i := 1 until i > shape [1] loop
-					l_idx [1] := i
+					l_idx_a [1] := i
 					if i = 1 then
-						l_dot := item (l_idx) * other.item (l_idx)
+						l_dot := item (l_idx_a) * other.item (l_idx_a)
 					else
-						l_dot := l_dot + (item (l_idx) * other.item (l_idx))
+						l_dot := l_dot + (item (l_idx_a) * other.item (l_idx_a))
 					end
 					i := i + 1
 				end
 				create l_new_shape.make_empty
 				create l_res.make_zeros (l_new_shape)
-				l_res.put (l_dot, create {ARRAY[INTEGER]}.make_empty)
+				l_res.put (l_dot, create {ARRAY [INTEGER]}.make_empty)
 
-				-- Autograd 1D vector dot
 				if requires_grad or other.requires_grad then
 					l_res.set_requires_grad (True)
 					create l_children.make (2)
@@ -1692,50 +1699,16 @@ feature -- Matrix Operations
 					l_res.set_prev (l_children)
 					l_res.set_backward_fn (agent backward_dot (l_res, Current, other))
 				end
-
 				Result := l_res
-			else
-				create l_new_shape.make_empty
 
-			-- 1. Determine Batch Dimensions and Broadcast
-			-- We need to broadcast the dimensions excluding the last 2
-			-- Logic:
-			-- A: (batch_A, n, m)
-			-- B: (batch_B, m, p)
-			-- Result: (broadcast(batch_A, batch_B), n, p)
-
-			-- This is complex to implement generically.
-			-- Strategy:
-			-- 1. Treat A and B as stacks of matrices.
-			-- 2. Broadcast the "stack" dimensions to a common shape.
-			-- 3. Perform 2D matmul for each pair in the stack.
-
-			-- Ideally we use `expand_as` but we need to exclude last 2 dims.
-			-- Simplified approach for now:
-			-- Only support 2D x 2D, 3D x 3D, or simple broadcasting where one batch is 1.
-			-- Full generic broadcasting requires slicing which we have `narrow`.
-
-			-- Let's construct the result shape first.
-			-- Max dims
-			l_common_dims := shape.count.max (other.shape.count)
-			create l_new_shape.make_filled (0, 1, l_common_dims)
-
-			-- ... (Broadcasting logic implementation is non-trivial in one go)
-			-- For this iter, let's implement strict Batch Matmul where batch dims must match or be 1.
-
-			-- Construct result shape
-			-- Copy batch dims
-			-- Last 2: n, p
-
-			-- Recursive implementation or loop?
-			-- Recursive helper `recursive_matmul`
-
-				create l_new_shape.make_from_array (calculate_matmul_shape (shape, other.shape))
+			elseif shape.count >= 2 and other.shape.count = 1 then
+				-- ── Case 2: Matrix-vector product (...,n,m) x (m,) → (...,n,)
+				-- Result shape: all but last dim of self
+				l_new_shape := shape.deep_twin
+				l_new_shape.remove_tail (1)          -- drop last dim (m)
 				create l_res.make_zeros (l_new_shape)
+				perform_matvec (create {ARRAY [INTEGER]}.make_empty, l_res, other)
 
-				recursive_matmul (1, create {ARRAY [INTEGER]}.make_empty, l_res, other, shape.count - 2, other.shape.count - 2)
-
-				-- Autograd N-D Batch Matmul
 				if requires_grad or other.requires_grad then
 					l_res.set_requires_grad (True)
 					create l_children.make (2)
@@ -1744,7 +1717,23 @@ feature -- Matrix Operations
 					l_res.set_prev (l_children)
 					l_res.set_backward_fn (agent backward_matmul (l_res, Current, other))
 				end
+				Result := l_res
 
+			else
+				-- ── Case 3: General batched matmul (...,n,m) x (...,m,p) → (...,n,p)
+				-- Strategy: broadcast batch dims, recurse down to 2D slices.
+				create l_new_shape.make_from_array (calculate_matmul_shape (shape, other.shape))
+				create l_res.make_zeros (l_new_shape)
+				recursive_matmul (1, create {ARRAY [INTEGER]}.make_empty, l_res, other, shape.count - 2, other.shape.count - 2)
+
+				if requires_grad or other.requires_grad then
+					l_res.set_requires_grad (True)
+					create l_children.make (2)
+					l_children.extend (Current)
+					l_children.extend (other)
+					l_res.set_prev (l_children)
+					l_res.set_backward_fn (agent backward_matmul (l_res, Current, other))
+				end
 				Result := l_res
 			end
 		end
@@ -1788,43 +1777,53 @@ feature {NONE} -- Matrix Autograd Helpers
 		end
 
 	calculate_matmul_shape (s1, s2: ARRAY [INTEGER]): ARRAY [INTEGER]
+			-- Compute the output shape for s1 @ s2.
+			-- s1: (..., n, m)   s2: (..., m, p)  or  s2: (m,) for matvec.
+			-- Returns: (..., n, p)  or  (..., n,) for matvec.
 		local
 			d1, d2: INTEGER
 			rem1, rem2: INTEGER
 			i: INTEGER
 			l_max: INTEGER
 			val1, val2: INTEGER
+			l_result_dim: INTEGER
 		do
 			d1 := s1.count
 			d2 := s2.count
 
-			rem1 := d1 - 2
-			rem2 := d2 - 2
-			l_max := rem1.max (rem2)
-
-			if l_max < 0 then l_max := 0 end
-
-			create Result.make_filled (1, 1, l_max + 2)
-			
-			-- Work from right to left on batch dims
-			from i := 1 until i > l_max loop
-				if rem1 - l_max + i >= 1 then val1 := s1 [rem1 - l_max + i] else val1 := 1 end
-				if rem2 - l_max + i >= 1 then val2 := s2 [rem2 - l_max + i] else val2 := 1 end
-				Result [i] := val1.max (val2)
-				i := i + 1
-			end
-
-			-- n x m @ m x p -> n x p
-			if d1 >= 2 then
-				Result [l_max + 1] := s1 [d1 - 1] -- n
+			if d2 = 1 then
+				-- ── Matvec: (..., n, m) x (m,) → (..., n,)
+				-- Result has all dims of s1 except the last one
+				l_result_dim := d1 - 1
+				if l_result_dim < 0 then l_result_dim := 0 end -- Scalar result if d1=1
+				create Result.make_filled (1, 1, l_result_dim)
+				from i := 1 until i > l_result_dim loop
+					Result [i] := s1 [i]
+					i := i + 1
+				end
+				if l_result_dim = 0 then
+					create Result.make_empty -- Scalar result
+				end
 			else
-				Result [l_max + 1] := 1
-			end
-			
-			if d2 >= 2 then
-				Result [l_max + 2] := s2 [d2]     -- p
-			else
-				Result [l_max + 2] := s2 [1]
+				-- ── General case: (..., n, m) x (..., m, p) → (..., n, p)
+				rem1 := d1 - 2
+				rem2 := d2 - 2
+				l_max := rem1.max (rem2)
+				if l_max < 0 then l_max := 0 end
+
+				create Result.make_filled (1, 1, l_max + 2)
+
+				-- Broadcast batch dims (right-aligned)
+				from i := 1 until i > l_max loop
+					if rem1 - l_max + i >= 1 then val1 := s1 [rem1 - l_max + i] else val1 := 1 end
+					if rem2 - l_max + i >= 1 then val2 := s2 [rem2 - l_max + i] else val2 := 1 end
+					Result [i] := val1.max (val2)
+					i := i + 1
+				end
+
+				-- n (rows of A) and p (cols of B)
+				Result [l_max + 1] := if d1 >= 2 then s1 [d1 - 1] else 1 end  -- n
+				Result [l_max + 2] := if d2 >= 2 then s2 [d2]     else 1 end  -- p
 			end
 		end
 
@@ -1857,59 +1856,95 @@ feature {NONE} -- Matrix Autograd Helpers
 		end
 
 	perform_2d_matmul (batch_indices: ARRAY [INTEGER]; res: ET_TENSOR [G]; other: ET_TENSOR [G])
+			-- Compute a single 2D matrix multiply for the batch slice identified by `batch_indices`.
+			-- res.shape: [..., n, p]   self.shape: [..., n, m]   other.shape: [..., m, p]
 		local
 			i, j, k: INTEGER
 			l_rows, l_cols, l_common: INTEGER
 			l_sum: G
 			l_full_idx_res: ARRAY [INTEGER]
-			
 		do
-			l_rows := res.shape [res.shape.count - 1]
-			l_cols := res.shape [res.shape.count]
-			-- This is wrong. shape is 1-based.
-			-- shape: [..., n, p]
-			l_rows := res.shape [res.shape.count - 1]
-			l_cols := res.shape [res.shape.count]
-
-			l_common := shape [shape.count] -- m
-
-			
+			-- shape: [..., n, p]  (last two dims)
+			l_rows   := res.shape [res.shape.count - 1]  -- n
+			l_cols   := res.shape [res.shape.count]       -- p
+			l_common := shape [shape.count]               -- m (inner dim of self)
 
 			from i := 1 until i > l_rows loop
 				from j := 1 until j > l_cols loop
 					check attached {G} numeric.zero_value as l_zero then
 						l_sum := l_zero
 					end
-
 					from k := 1 until k > l_common loop
-						-- Need full indices for A and B
-						-- A indices: batch_indices + [i, k] (broadcast if needed)
-						-- B indices: batch_indices + [k, j] (broadcast)
-
-						l_sum := l_sum + get_broadcast_item (batch_indices, i, k, True, other) * get_broadcast_item (batch_indices, k, j, False, other)
+						-- A[batch, i, k] * B[batch, k, j]  (with broadcasting on batch dims)
+						l_sum := l_sum + get_broadcast_item (batch_indices, i, k, True, other)
+									 * get_broadcast_item (batch_indices, k, j, False, other)
 						k := k + 1
 					end
-
-					-- Put result
 					l_full_idx_res := batch_indices.deep_twin
 					l_full_idx_res.force (i, l_full_idx_res.count + 1)
 					l_full_idx_res.force (j, l_full_idx_res.count + 1)
 					res.put (l_sum, l_full_idx_res)
-
 					j := j + 1
 				end
 				i := i + 1
 			end
 		end
 
+	perform_matvec (batch_indices: ARRAY [INTEGER]; res: ET_TENSOR [G]; vec: ET_TENSOR [G])
+			-- Compute matrix-vector product for (...,n,m) x (m,) → (...,n,)
+			-- `batch_indices` covers only the outer batch dims of `res`.
+		local
+			i, k: INTEGER
+			l_rows, l_common: INTEGER
+			l_sum: G
+			l_idx_a, l_idx_v, l_full_idx_res: ARRAY [INTEGER]
+		do
+			if batch_indices.count < res.shape.count - 1 then
+				-- Recurse over next batch dim
+				l_rows := res.shape [batch_indices.count + 1]
+				from i := 1 until i > l_rows loop
+					l_full_idx_res := batch_indices.deep_twin
+					l_full_idx_res.force (i, l_full_idx_res.count + 1)
+					perform_matvec (l_full_idx_res, res, vec)
+					i := i + 1
+				end
+			else
+				-- Base: batch_indices covers all batch dims of res; now compute the vector for each row i
+				l_rows   := shape [shape.count - 1]    -- n
+				l_common := shape [shape.count]         -- m
+				create l_idx_v.make_filled (1, 1, 1)
+				from i := 1 until i > l_rows loop
+					check attached {G} numeric.zero_value as l_zero then
+						l_sum := l_zero
+					end
+					create l_idx_a.make_from_array (batch_indices)
+					l_idx_a.force (i, l_idx_a.count + 1)
+					l_idx_a.force (1, l_idx_a.count + 1) -- Placeholder for k
+					from k := 1 until k > l_common loop
+						l_idx_a [l_idx_a.count] := k
+						l_idx_v [1] := k
+						l_sum := l_sum + item (l_idx_a) * vec.item (l_idx_v)
+						k := k + 1
+					end
+					l_full_idx_res := batch_indices.deep_twin
+					l_full_idx_res.force (i, l_full_idx_res.count + 1)
+					res.put (l_sum, l_full_idx_res)
+					i := i + 1
+				end
+			end
+		end
+
 	get_broadcast_item (batch_indices: ARRAY [INTEGER]; r, c: INTEGER; is_a: BOOLEAN; other: ET_TENSOR [G]): G
+			-- Get element [batch..., r, c] from self (is_a=True) or other (is_a=False),
+			-- applying batch broadcasting: if a batch dim of the source tensor is 1,
+			-- always use index 1 regardless of what `batch_indices` says.
 		local
 			l_target_shape: ARRAY [INTEGER]
 			l_full_indices: ARRAY [INTEGER]
 			i: INTEGER
 			l_target_dim_count: INTEGER
 			l_batch_offset_diff: INTEGER
-			l_idx: INTEGER
+			l_result_batch_idx: INTEGER
 		do
 			if is_a then
 				l_target_shape := shape
@@ -1921,29 +1956,34 @@ feature {NONE} -- Matrix Autograd Helpers
 
 			create l_full_indices.make_filled (1, 1, l_target_dim_count)
 
-			-- Map `batch_indices` (from result) to `l_target_shape`
-			-- `batch_indices` has length `N`. `l_target_shape` has length `M`.
-			-- Both have 2 matrix dimensions at the end. Batch dimensions are right-aligned.
-
+			-- Map result batch_indices (right-aligned) onto the source tensor batch dims.
+			-- l_batch_offset_diff can be negative when the result has more batch dims than source;
+			-- in that case the source has a "virtual" leading dim of 1 (broadcast), so we use 1.
 			l_batch_offset_diff := batch_indices.count - (l_target_dim_count - 2)
 
 			from i := 1 until i > (l_target_dim_count - 2) loop
-				l_idx := batch_indices [i + l_batch_offset_diff] -- corresponding index in broadcasted batch
-				if l_target_shape [i] = 1 then
-					l_full_indices [i] := 1
+				-- Which result batch index corresponds to source batch dim i?
+				l_result_batch_idx := i + l_batch_offset_diff
+				if l_result_batch_idx >= 1 and l_result_batch_idx <= batch_indices.count then
+					-- Broadcast: if source dim is 1, clamp to 1
+					if l_target_shape [i] = 1 then
+						l_full_indices [i] := 1
+					else
+						l_full_indices [i] := batch_indices [l_result_batch_idx]
+					end
 				else
-					l_full_indices [i] := l_idx
+					-- Source has fewer batch dims than result: treat as size-1 (broadcast)
+					l_full_indices [i] := 1
 				end
 				i := i + 1
 			end
 
-			-- Set the last 2 dimensions for matrix multiplication
+			-- Fill the last 2 (matrix) dimensions
 			if l_target_dim_count >= 2 then
 				l_full_indices [l_target_dim_count - 1] := r
-				l_full_indices [l_target_dim_count] := c
+				l_full_indices [l_target_dim_count]     := c
 			elseif l_target_dim_count = 1 then
-				-- Edge case 1D
-				l_full_indices [1] := c
+				l_full_indices [1] := c  -- treat 1D case
 			end
 
 			if is_a then

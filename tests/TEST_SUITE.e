@@ -39,6 +39,7 @@ feature -- Tests
             t.broadcasting_tensors
             t.logic_and_comparisons
             t.statistics
+            t.matmul_operations
 		end
 
     test_sanity_check

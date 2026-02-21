@@ -443,4 +443,59 @@ feature -- Tests
             print ("%NCALCULATED STD: " + data_std.out + " %N")
         end
 
+    matmul_operations
+            -- 5.1 Matrix Operations (extended matmul cases)
+        local
+            A, B, C: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            v, mv_result: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            bA, bB, bC: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            At, AtB: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            l_elem: ET_NUMERIC_ELEMENT [REAL_32]
+        do
+            print ("%N[5.1] Matrix Operations%N")
+
+            -- ── 2D x 2D: (2,3) @ (3,2) → (2,2)
+            -- A = [[1,2,3],[4,5,6]]
+            create A.make_from_integer_array (<<1, 2, 3, 4, 5, 6>>)
+            A := A.reshape (<<2, 3>>)
+            -- B = [[7,8],[9,10],[11,12]]
+            create B.make_from_integer_array (<<7, 8, 9, 10, 11, 12>>)
+            B := B.reshape (<<3, 2>>)
+            C := A.matmul (B)
+            print ("A @ B  (2,3)x(3,2) -> (2,2):%N" + C.out + "%N")
+            print ("SHAPE: " + C.show_shape + "%N")
+            print ("---------------------------------------------%N")
+
+            -- ── Matrix-vector: (2,3) @ (3,) → (2,)
+            -- v = [1, 0, 0]   → result is first column of A
+            create v.make_from_integer_array (<<1, 0, 0>>)
+            mv_result := A.matmul (v)
+            print ("A @ v  (2,3)x(3,) -> (2,):%N" + mv_result.out + "%N")
+            print ("SHAPE: " + mv_result.show_shape + "%N")
+            print ("---------------------------------------------%N")
+
+            -- ── Batched: (2,2,3) @ (2,3,2) → (2,2,2)
+            create bA.make_ones (<<2, 2, 3>>)
+            create bB.make_ones (<<2, 3, 2>>)
+            bC := bA.matmul (bB)
+            -- each 2x3 @ 3x2 of ones => 2x2 matrix of 3s
+            print ("bA @ bB  (2,2,3)x(2,3,2) -> (2,2,2):%N" + bC.out + "%N")
+            print ("SHAPE: " + bC.show_shape + "%N")
+            print ("---------------------------------------------%N")
+
+            -- ── Broadcast batch: (1,2,3) @ (2,3,2) → (2,2,2)
+            create bA.make_ones (<<1, 2, 3>>)
+            bC := bA.matmul (bB)
+            print ("bA @ bB  (1,2,3)x(2,3,2) -> (2,2,2) [broadcast]:%N" + bC.out + "%N")
+            print ("SHAPE: " + bC.show_shape + "%N")
+            print ("---------------------------------------------%N")
+
+            -- ── Transposed (strided) operand: A^T @ A
+            -- A (2,3), A^T (3,2) → (3,3)
+            At := A.transpose (1, 2)
+            AtB := At.matmul (A)
+            print ("A^T @ A  (3,2)x(2,3) -> (3,3):%N" + AtB.out + "%N")
+            print ("SHAPE: " + AtB.show_shape + "%N")
+        end
+
 end
