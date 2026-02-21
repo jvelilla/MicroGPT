@@ -2,48 +2,31 @@ note
     description: "Simple Test Suite for Autograd"
 
 class
-    TEST_SUITE
+	ET_TEST_SUITE
 
 inherit
-    DOUBLE_MATH
-        export {NONE} all end
+	DOUBLE_MATH
+		export {NONE} all end
 
 create
-    make
+	make
 
 feature -- Initialization
 
-    make
-        do
-            print ("Running Tests...%N")
-            test_sanity_check
-            test_more_ops
-            test_torch_use_cases
-            print ("All Tests Passed!%N")
-        end
+	make
+		do
+			print ("Running Legacy Tests...%N")
+			test_sanity_check
+			test_more_ops
+			test_torch_examples
+			print ("Legacy Tests Passed!%N")
+		end
 
 feature -- Tests
 
-	test_torch_use_cases
-		local
-			t: ET_TORCH_USE_CASES
-		do
-			create t
-            t.from_existing_data
-            t.changing_tensor_dimensions
-            t.restructuring_tensor_dimensions
-            t.combining_tensors
-            t.accessing_elements
-            t.slicing_tensors
-            t.arithmetic_operations
-            t.broadcasting_tensors
-            t.logic_and_comparisons
-            t.statistics
-		end
-
     test_sanity_check
         local
-            a, b, c, d, e, f, L: VALUE
+            a, b, c, d, e, f, L: ET_VALUE
             tol: REAL_64
         do
             print ("  [TEST] Sanity Check... ")
@@ -72,8 +55,8 @@ feature -- Tests
 
     test_more_ops
         local
-            x: VALUE
-            z: VALUE
+            x: ET_VALUE
+            z: ET_VALUE
             tol: REAL_64
         do
             print ("  [TEST] More Ops (ReLU, Pow)... ")
@@ -82,7 +65,7 @@ feature -- Tests
 
             -- z = 2 * x + 2 + x
             -- z = 3x + 2 -> dz/dx = 3
-            z := x * create {VALUE}.make(2.0) + create {VALUE}.make(2.0) + x
+            z := x * create {ET_VALUE}.make(2.0) + create {ET_VALUE}.make(2.0) + x
             z.backward
 
             assert_approx (x.grad, 3.0, tol, "x.grad should be 3.0")
@@ -99,6 +82,28 @@ feature -- Tests
             assert_approx (x.grad, 0.0, tol, "relu(-2) grad should be 0")
 
             print ("OK%N")
+        end
+
+
+    test_torch_examples
+        local
+            l_examples: ET_TORCH_USE_CASES
+        do
+            print ("%N  [TEST] Torch Examples... %N")
+            create l_examples
+            l_examples.from_existing_data
+            l_examples.with_predefined_values
+            l_examples.checking_tensor_dimensions
+            l_examples.changing_tensor_dimensions
+            l_examples.restructuring_tensor_dimensions
+            l_examples.combining_tensors
+            l_examples.accessing_elements
+            l_examples.slicing_tensors
+            l_examples.arithmetic_operations
+            l_examples.broadcasting_tensors
+            l_examples.logic_and_comparisons
+            l_examples.statistics
+            print ("Done%N")
         end
 
     assert_approx (actual, expected, tol: REAL_64; msg: STRING)

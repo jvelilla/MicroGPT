@@ -1,0 +1,311 @@
+note
+	description: "Tests for TENSOR class."
+
+class
+	ET_TEST_TENSOR
+
+inherit
+	EQA_TEST_SET
+		redefine
+			on_prepare
+		select
+			default_create
+		end
+	DOUBLE_MATH
+		rename
+			default_create as dm_default_create
+		end
+
+feature -- Initialization
+
+	on_prepare
+			-- Called before each test.
+		do
+			-- Common setup if needed
+		end
+
+feature -- Tests
+
+	test_tensor_creation
+		local
+			t: ET_TENSOR [REAL_32]
+			shape: ARRAY [INTEGER]
+			indices: ARRAY [INTEGER]
+			val: REAL_32
+			tol: REAL_64
+		do
+			print ("  [TEST] Tensor Creation... ")
+			tol := 1.0e-6
+			shape := <<2, 3>>
+			create t.make_zeros (shape)
+
+			-- Check shape
+			assert ("Correct shape", t.shape [1] = 2 and t.shape [2] = 3)
+
+			-- Check zeros
+			indices := <<1, 1>>
+			val := t.item (indices)
+			assert_approx_32 (val, 0.0, tol, "t[1,1] should be 0.0")
+
+			-- Check put/get
+			t.put ({REAL_32} 5.5, indices)
+			val := t.item (indices)
+			assert_approx_32 (val, 5.5, tol, "t[1,1] should be 5.5")
+
+			print ("OK%N")
+		end
+
+	test_tensor_matmul
+		local
+			A, B, C: ET_TENSOR [REAL_32]
+			shape_A, shape_B: ARRAY [INTEGER]
+			indices: ARRAY [INTEGER]
+			tol: REAL_64
+			v: REAL_32
+		do
+			print ("  [TEST] Tensor Matmul... ")
+			tol := 1.0e-6
+
+			-- A (2x2) Identity
+			shape_A := <<2, 2>>
+			create A.make_zeros (shape_A)
+			A.put ({REAL_32} 1.0, <<1, 1>>)
+			A.put ({REAL_32} 0.0, <<1, 2>>)
+			A.put ({REAL_32} 0.0, <<2, 1>>)
+			A.put ({REAL_32} 1.0, <<2, 2>>)
+
+			-- B (2x2) = [[1, 2], [3, 4]]
+			shape_B := <<2, 2>>
+			create B.make_zeros (shape_B)
+			B.put ({REAL_32} 1.0, <<1, 1>>)
+			B.put ({REAL_32} 2.0, <<1, 2>>)
+			B.put ({REAL_32} 3.0, <<2, 1>>)
+			B.put ({REAL_32} 4.0, <<2, 2>>)
+
+			-- C = A * B = I * B = B
+			C := A.matmul (B)
+
+			v := C.item (<<1, 1>>)
+			assert_approx_32 (v, 1.0, tol, "C[1,1]")
+			v := C.item (<<1, 2>>)
+			assert_approx_32 (v, 2.0, tol, "C[1,2]")
+			v := C.item (<<2, 1>>)
+			assert_approx_32 (v, 3.0, tol, "C[2,1]")
+			v := C.item (<<2, 2>>)
+			assert_approx_32 (v, 4.0, tol, "C[2,2]")
+
+			print ("OK%N")
+		end
+
+	test_tensor_transpose
+		local
+			a, at: ET_TENSOR [REAL_32]
+			shape: ARRAY [INTEGER]
+			tol: REAL_64
+			v: REAL_32
+		do
+			print ("  [TEST] Tensor Transpose... ")
+			tol := 1.0e-6
+
+			-- A (2x3)
+			-- [[1, 2, 3],
+			--  [4, 5, 6]]
+			shape := <<2, 3>>
+			create a.make_zeros (shape)
+			a.put ({REAL_32} 1.0, <<1, 1>>)
+			a.put ({REAL_32} 2.0, <<1, 2>>)
+			a.put ({REAL_32} 3.0, <<1, 3>>)
+			a.put ({REAL_32} 4.0, <<2, 1>>)
+			a.put ({REAL_32} 5.0, <<2, 2>>)
+			a.put ({REAL_32} 6.0, <<2, 3>>)
+
+			at := a.transpose (1, 2)
+
+			-- at (3x2)
+			-- [[1, 4],
+			--  [2, 5],
+			--  [3, 6]]
+
+			assert ("Correct transposed shape", at.shape [1] = 3 and At.shape [2] = 2)
+
+			v := at.item (<<1, 1>>) -- A[1,1] = 1
+			assert_approx_32 (v, 1.0, tol, "At[1,1]")
+
+			v := at.item (<<1, 2>>) -- A[2,1] = 4
+			assert_approx_32 (v, 4.0, tol, "At[1,2]")
+
+			v := at.item (<<3, 2>>) -- A[2,3] = 6
+			assert_approx_32 (v, 6.0, tol, "At[3,2]")
+
+			print ("OK%N")
+		end
+
+	test_tensor_broadcast_matmul
+		local
+			A, B, C: ET_TENSOR [REAL_32]
+			shape_A, shape_B: ARRAY [INTEGER]
+			tol: REAL_64
+			v: REAL_32
+		do
+			print ("  [TEST] Tensor Batch Matmul... ")
+			tol := 1.0e-5
+			
+			-- Batch dim 2
+			-- A: (2, 2, 2)
+			shape_A := <<2, 2, 2>>
+			create A.make_ones (shape_A)
+			
+			-- B: (2, 2, 2)
+			shape_B := <<2, 2, 2>>
+			create B.make_ones (shape_B)
+			
+			-- C = A * B -> (2, 2, 2)
+			-- Each slice is ones(2,2) * ones(2,2) = full(2,2, val=2)
+			C := A.matmul (B)
+			
+			assert ("Correct shape", C.shape.count = 3 and C.shape[1] = 2)
+			
+			v := C.item (<<1, 1, 1>>)
+			assert_approx_32 (v, 2.0, tol, "C[1,1,1] should be 2.0")
+			v := C.item (<<2, 2, 2>>)
+			assert_approx_32 (v, 2.0, tol, "C[2,2,2] should be 2.0")
+			
+			print ("OK%N")
+		end
+
+	test_tensor_element_wise
+		local
+			A, B, C: ET_TENSOR [REAL_32]
+			tol: REAL_64
+			v: REAL_32
+		do
+			print ("  [TEST] Tensor Element-wise (Broadcast)... ")
+			tol := 1.0e-5
+			
+			-- A: (2, 3)
+			-- [[1, 1, 1],
+			--  [2, 2, 2]]
+			create A.make_zeros (<<2, 3>>)
+			A.put ({REAL_32} 1.0, <<1, 1>>)
+			A.put ({REAL_32} 1.0, <<1, 2>>)
+			A.put ({REAL_32} 1.0, <<1, 3>>)
+			A.put ({REAL_32} 2.0, <<2, 1>>)
+			A.put ({REAL_32} 2.0, <<2, 2>>)
+			A.put ({REAL_32} 2.0, <<2, 3>>)
+			
+			-- B: (1, 3) -> Broadcasts to (2, 3)
+			-- [[10, 20, 30]]
+			create B.make_zeros (<<1, 3>>)
+			B.put ({REAL_32} 10.0, <<1, 1>>)
+			B.put ({REAL_32} 20.0, <<1, 2>>)
+			B.put ({REAL_32} 30.0, <<1, 3>>)
+			
+			-- C = A + B
+			-- [[11, 21, 31],
+			--  [12, 22, 32]]
+			C := A + B
+			
+			assert ("Correct shape", C.shape[1] = 2 and C.shape[2] = 3)
+			
+			v := C.item (<<1, 1>>)
+			assert_approx_32 (v, 11.0, tol, "C[1,1]")
+			v := C.item (<<2, 3>>)
+			assert_approx_32 (v, 32.0, tol, "C[2,3]")
+			
+			print ("OK%N")
+		end
+	
+	test_tensor_reductions
+		local
+			A: ET_TENSOR [REAL_32]
+			S, M, Mx: ET_TENSOR [REAL_32]
+			Am: ET_TENSOR [INTEGER]
+			tol: REAL_64
+			idx: INTEGER
+		do
+			print ("  [TEST] Tensor Reductions... ")
+			tol := 1.0e-5
+			
+			-- A: (2, 3)
+			-- [[1, 2, 3],
+			--  [4, 5, 6]]
+			create A.make_zeros (<<2, 3>>)
+			A.put ({REAL_32} 1.0, <<1, 1>>)
+			A.put ({REAL_32} 2.0, <<1, 2>>)
+			A.put ({REAL_32} 3.0, <<1, 3>>)
+			A.put ({REAL_32} 4.0, <<2, 1>>)
+			A.put ({REAL_32} 5.0, <<2, 2>>)
+			A.put ({REAL_32} 6.0, <<2, 3>>)
+			
+			-- Sum dim 1 -> (1, 3) or (3,) depending on keep_dim
+			-- [[5, 7, 9]]
+			S := A.sum (1, True)
+			assert ("Sum shape", S.shape[1] = 1 and S.shape[2] = 3)
+			assert_approx_32 (S.item(<<1, 1>>), 5.0, tol, "Sum[1]")
+			assert_approx_32 (S.item(<<1, 3>>), 9.0, tol, "Sum[3]")
+			
+			-- Mean dim 2 -> (2, 1)
+			-- [[2], [5]]
+			M := A.mean_dim (2, True)
+			assert ("Mean shape", M.shape[1] = 2 and M.shape[2] = 1)
+			assert_approx_32 (M.item(<<1, 1>>), 2.0, tol, "Mean[1]")
+			assert_approx_32 (M.item(<<2, 1>>), 5.0, tol, "Mean[2]")
+			
+			-- Max dim 2 -> (2, 1)
+			-- [[3], [6]]
+			Mx := A.max (2, True)
+			assert_approx_32 (Mx.item(<<1, 1>>), 3.0, tol, "Max[1]")
+			
+			-- Argmax dim 2 -> (2, 1)
+			-- [[3], [3]] (Indices are 1-based: 3rd element is max)
+			Am := A.argmax (2, True)
+			idx := Am.item(<<1, 1>>)
+			assert ("Argmax[1]", idx = 3)
+			idx := Am.item(<<2, 1>>)
+			assert ("Argmax[2]", idx = 3)
+			
+			print ("OK%N")
+		end
+
+	test_tensor_autograd
+		local
+			x, y, z: ET_TENSOR [REAL_32]
+			tol: REAL_64
+		do
+			print ("  [TEST] Tensor Autograd... ")
+			tol := 1.0e-5
+			
+			-- Simple addition/multiplication autograd
+			create x.make_full (<<1>>, {REAL_32} 2.0)
+			x.set_requires_grad (True)
+			
+			create y.make_full (<<1>>, {REAL_32} 3.0)
+			y.set_requires_grad (True)
+			
+			-- z = x * y + y
+			-- dz/dx = y = 3.0
+			-- dz/dy = x + 1 = 2.0 + 1 = 3.0
+			z := x * y + y
+			z.backward
+			
+			if attached x.grad as g_x then
+				assert_approx_32 (g_x.item(<<1>>), 3.0, tol, "dz/dx should be 3.0")
+			else
+				assert ("x.grad is not null", False)
+			end
+			
+			if attached y.grad as g_y then
+				assert_approx_32 (g_y.item(<<1>>), 3.0, tol, "dz/dy should be 3.0")
+			else
+				assert ("y.grad is not null", False)
+			end
+			
+			print ("OK%N")
+		end
+
+	assert_approx_32 (actual: REAL_32; expected: REAL_64; tol: REAL_64; msg: STRING)
+		do
+			assert (msg + " Expected " + expected.out + " but got " + actual.out, (actual.to_double - expected).abs <= tol)
+		end
+
+end
