@@ -2,27 +2,37 @@
 
 A pure Eiffel port of Andrej Karpathy's [microgpt.py](https://gist.github.com/karpathy/8627fe009c40f57531cb18360106ce95) and inspired by [AutoGrad-Engine](https://github.com/milanm/AutoGrad-Engine).
 
-This project implements a tiny GPT language model and a scalar-valued Autograd engine from scratch in Eiffel. It is designed for educational purposes to understand the internal mechanics of Transformers and Backpropagation.
+This project implements a tiny GPT language model and a high-performance Tensor library with an Autograd engine from scratch in Eiffel. It is designed for educational purposes to understand the internal mechanics of Transformers, Backpropagation, and Tensor operations.
 
 ## 🚀 What is this?
-This is a minimalist implementation of the algorithm behind models like ChatGPT. It includes:
-- **Autograd Engine**: A scalar-value automatic differentiation engine (like PyTorch's autograd but simpler).
+This is a minimalist implementation of the algorithm behind models like ChatGPT, built with Eiffel's "Design by Contract" (DbC) principles. It includes:
+- **ET_TENSOR Library**: A robust multidimensional array library supporting broadcasting, strided views, and vectorized operations.
+- **Autograd Engine**: Automatic differentiation supporting both scalar (legacy) and tensor-based gradients.
 - **Transformer**: A full GPT implementation (Embeddings, Multi-head Attention, Feed-forward, LayerNorm).
 - **Training Loop**: A simple loop to train the model on text data (e.g., a list of names).
 
 ## 📂 Project Structure
-| File | Responsibility |
+| File/Directory | Responsibility |
 |---|---|
-| `src/autograd/VALUE.e` | **Autograd Engine**: Wraps scalars with automatic gradient tracking and backpropagation logic. |
-| `src/gpt/GPT.e` | **GPT Model**: The main Transformer architecture. |
-| `src/optim/ADAM.e` | **Optimizer**: Adam optimization algorithm implementation. |
+| `src/tensor/ET_TENSOR.e` | **Tensor Engine**: Multidimensional arrays with broadcasting and strided storage. |
+| `src/autograd/ET_VALUE.e` | **Autograd Engine**: Automatic gradient tracking and backpropagation logic. |
+| `src/gpt/ET_GPT.e` | **GPT Model**: The main Transformer architecture. |
+| `src/optim/ET_ADAM.e` | **Optimizer**: Adam optimization algorithm implementation. |
 | `app/APPLICATION.e` | **Entry Point**: CLI wrapper for the Trainer. |
-| `tests/TEST_SUITE.e` | **Test Suite**: Verifies Autograd and Model correctness. |
+| `tests/` | **Test Suite**: Eiffel AutoTest sets for verification. |
+
+## 🧠 ET_TENSOR Library
+The project features a custom Tensor library designed to mirror PyTorch's functionality while leveraging Eiffel's type safety and contracts.
+
+- **Dynamic Broadcasting**: Implicitly expand dimensions for arithmetic operations.
+- **Efficient Views**: `view`, `reshape`, `transpose`, and `narrow` create lightweight views without copying data.
+- **Polymorphic Storage**: Generic support for `REAL_64`, `INTEGER_32`, etc., using a specialized numeric hierarchy.
+- **Design by Contract**: Every operation is guarded by strict preconditions (e.g., shape compatibility) and postconditions, ensuring mathematical correctness.
 
 ## 🛠 Quick Start
 
 ### Prerequisites
-- [EiffelStudio](https://www.eiffel.com/) (Version 25.12)
+- [EiffelStudio](https://www.eiffel.com/) (Version 25.12 recommended)
 
 ### Build and Run
 
@@ -50,12 +60,6 @@ The model automatically loads `model.ckpt` if found.
 .\EIFGENs\app\F_code\microgpt.exe -interactive
 ```
 
-In interactive mode:
-1.  Type a prompt (e.g., "The").
-2.  Press Enter.
-3.  The model generates text based on your prompt.
-4.  Type `exit` to quit.
-
 **Available Flags:**
 - `-n_embd <int>`: Embedding dimension (default: 16)
 - `-n_head <int>`: Number of attention heads (default: 4)
@@ -71,6 +75,7 @@ To verify the implementation (gradients, shapes, math correctness):
 ```bash
 ec -config microgpt.ecf -target tests -run
 ```
+See `tests/ET_TORCH_USE_CASES.e` for examples of PyTorch-parity tests.
 
 ### Expected Output
 The application will start training on the provided `input.txt`.
@@ -87,9 +92,10 @@ step 1000 / 1000 | loss 2.154
 sample 1: ...
 ```
 
-## 🧠 How it Works
-1.  **Forward Pass**: Input data flows through the graph of `VALUE` objects. Each operation records its children to build a computational graph.
+## 🔬 How it Works
+1.  **Forward Pass**: Input data flows through the graph of `ET_TENSOR` or `ET_VALUE` objects. Each operation records its children to build a computational graph.
 2.  **Loss Calculation**: Cross-entropy loss is computed on the predictions.
-3.  **Backward Pass** (`loss.backward`): Gradients are propagated backwards from the loss to all parameters using the chain rule.
-4.  **Update** (`adam.step`): Parameters are adjusted to minimize the loss.
+3.  **Backward Pass**: Gradients are propagated backwards from the loss to all parameters using the chain rule.
+4.  **Update**: Adam optimizer adjusts parameters to minimize the loss.
+
 
