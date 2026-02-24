@@ -14,11 +14,19 @@ create
 feature -- Initialization
 
     make
+        local
+            l_env: ET_ENV
         do
+            print ("Configuring Environment...%N")
+            create l_env
+            l_env.append_to_path ("spec\openblas\bin")
+
             print ("Running Tests...%N")
             test_sanity_check
             test_more_ops
             test_torch_use_cases
+            test_blas
+            test_safe_tensors
             print ("All Tests Passed!%N")
         end
 
@@ -42,9 +50,28 @@ feature -- Tests
             t.matmul_operations
 		end
 
+	test_blas
+		local
+			t: ET_TEST_BLAS
+		do
+			create t.default_create
+			t.on_prepare
+			t.test_sgemm_square
+			t.test_sgemm_rectangular
+		end
+
+	test_safe_tensors
+		local
+			t: ET_TEST_SAFE_TENSORS
+		do
+			create t.default_create
+			-- t.on_prepare -- only if needed
+			t.test_safetensors_mmap_load
+		end
+
     test_sanity_check
         local
-            a, b, c, d, e, f, L: VALUE
+            a, b, c, d, e, f, L: ET_VALUE
             tol: REAL_64
         do
             print ("  [TEST] Sanity Check... ")
@@ -73,8 +100,8 @@ feature -- Tests
 
     test_more_ops
         local
-            x: VALUE
-            z: VALUE
+            x: ET_VALUE
+            z: ET_VALUE
             tol: REAL_64
         do
             print ("  [TEST] More Ops (ReLU, Pow)... ")
@@ -83,7 +110,7 @@ feature -- Tests
 
             -- z = 2 * x + 2 + x
             -- z = 3x + 2 -> dz/dx = 3
-            z := x * create {VALUE}.make(2.0) + create {VALUE}.make(2.0) + x
+            z := x * create {ET_VALUE}.make(2.0) + create {ET_VALUE}.make(2.0) + x
             z.backward
 
             assert_approx (x.grad, 3.0, tol, "x.grad should be 3.0")

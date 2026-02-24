@@ -20,8 +20,12 @@ feature -- Initialization
 
 	on_prepare
 			-- Called before each test.
+		local
+			l_env: ET_ENV
 		do
-			-- Common setup if needed
+			create l_env
+			-- When running from EIFGENs\tests\W_code, we traverse up 3 levels to project root.
+			l_env.append_to_path ("..\..\..\spec\openblas\bin")
 		end
 
 feature -- Tests

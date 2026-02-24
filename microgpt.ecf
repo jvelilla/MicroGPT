@@ -20,6 +20,35 @@
 		<library name="base" location="$ISE_LIBRARY\library\base\base.ecf"/>
 		<library name="time" location="$ISE_LIBRARY\library\time\time.ecf"/>
 		<library name="json" location="$ISE_LIBRARY\contrib\library\text\parser\json\library\json.ecf"/>
+
+		<!-- Memory mapped files -->
+		<external_include location="$ECF_CONFIG_PATH/spec/mmap/include"/>
+				
+		<!-- OpenBLAS configuration representing cross platform bindings -->
+		<external_include location="$ECF_CONFIG_PATH/spec/openblas/include">
+			<condition>
+				<platform value="windows"/>
+			</condition>
+		</external_include>
+		<external_object location="$ECF_CONFIG_PATH/spec/openblas/lib/libopenblas.lib">
+			<condition>
+				<platform value="windows"/>
+			</condition>
+		</external_object>
+		
+		<external_object location="-lopenblas">
+			<condition>
+				<platform excluded_value="windows"/>
+				<custom name="os" excluded_value="mac"/>
+			</condition>
+		</external_object>
+
+		<external_object location="-framework Accelerate">
+			<condition>
+				<custom name="os" value="mac"/>
+			</condition>
+		</external_object>
+
 		<cluster name="src" location=".\src\" recursive="true"/>
 	</target>
     

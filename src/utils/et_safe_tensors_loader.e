@@ -16,16 +16,15 @@ feature -- Initialization
 feature -- Access
 
     load_tensor (a_path: PATH; key: READABLE_STRING_GENERAL): detachable ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            -- Load a tensor by key from the safetensors file.
         local
             file: RAW_FILE
             header_size: INTEGER_64
-            header_json: STRING
-            
+            header_json: STRING_8
             data_offset: INTEGER
             tensor_data_start: INTEGER
             
             parser: JSON_PARSER
+            mmap: ET_MEMORY_MAP
         do
             create file.make_with_path (a_path)
             if file.exists then
@@ -56,9 +55,17 @@ feature -- Access
                                      tensor_data_start := data_offset + start_off.integer_64_item.to_integer_32
                                      
                                      if attached {JSON_ARRAY} info.item ("shape") as j_shape then
-                                         file.go (tensor_data_start)
-                                         -- Create Tensor directly from file read
-                                         Result := create_tensor_from_file (file, json_array_to_integer_array (j_shape), (end_off.integer_64_item - start_off.integer_64_item).to_integer_32)
+                                         -- Create memory map of the file
+                                         create mmap.make_with_path (a_path)
+                                         
+                                         if mmap.is_mapped then
+                                         	-- Create Tensor directly from memory mapped pointer
+                                         	Result := create_tensor_from_mmap (mmap, tensor_data_start, json_array_to_integer_array (j_shape), (end_off.integer_64_item - start_off.integer_64_item).to_integer_32)
+                                         	-- Note: We don't unmap here because the tensor needs the data.
+                                         	-- For a production system, we'd need reference counting on the mmap.
+                                         else
+                                         	print ("Could not memory map file%N")
+                                         end
                                      end
                                  end
                              end
@@ -72,12 +79,14 @@ feature -- Access
 
 feature {NONE} -- Implementation
 
-    create_tensor_from_file (f: RAW_FILE; shape: ARRAY [INTEGER]; byte_len: INTEGER): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+    create_tensor_from_mmap (mmap: ET_MEMORY_MAP; offset_in_file: INTEGER; shape: ARRAY [INTEGER]; byte_len: INTEGER): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
         local
             mp: MANAGED_POINTER
         do
-            create mp.make (byte_len)
-            f.read_to_managed_pointer (mp, 0, byte_len)
+            -- We wrap the mmapped pointer in a MANAGED_POINTER without allocating new memory,
+            -- by passing it the direct pointer and size. 
+            -- Note: in a true zero-copy, the caller must ensure `mmap` outlives the tensor.
+            create mp.share_from_pointer (mmap.item + offset_in_file, byte_len)
             create Result.make_from_pointer (mp, 0, shape, default_strides (shape))
         end
 

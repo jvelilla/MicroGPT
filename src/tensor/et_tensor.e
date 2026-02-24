@@ -262,6 +262,8 @@ feature {NONE} -- Initialization
 feature -- Access
 
 	data: MANAGED_POINTER
+	float_storage: detachable SPECIAL [REAL_32]
+			-- Optional SPECIAL array backing for potential mmap sharing.
 	offset: INTEGER
 	shape: ARRAY [INTEGER]
 	strides: ARRAY [INTEGER]
@@ -1863,30 +1865,45 @@ feature {NONE} -- Matrix Autograd Helpers
 			l_rows, l_cols, l_common: INTEGER
 			l_sum: G
 			l_full_idx_res: ARRAY [INTEGER]
+			l_blas: ET_BLAS
 		do
 			-- shape: [..., n, p]  (last two dims)
 			l_rows   := res.shape [res.shape.count - 1]  -- n
 			l_cols   := res.shape [res.shape.count]       -- p
 			l_common := shape [shape.count]               -- m (inner dim of self)
 
-			from i := 1 until i > l_rows loop
-				from j := 1 until j > l_cols loop
-					check attached {G} numeric.zero_value as l_zero then
-						l_sum := l_zero
+			-- Fast path for REAL_32 via OpenBLAS S-GEMM
+			if ({G}).type_id = ({ET_NUMERIC_ELEMENT [REAL_32]}).type_id and then
+			   is_contiguous and then other.is_contiguous and then res.is_contiguous and then
+			   batch_indices.is_empty  -- Basic 2D without batching for now
+			then
+				create l_blas
+				l_blas.cblas_sgemm (
+					l_blas.CblasRowMajor, l_blas.CblasNoTrans, l_blas.CblasNoTrans,
+					l_rows, l_cols, l_common,
+					1.0, data, l_common, other.data, l_cols, 0.0, res.data, l_cols
+				)
+			else
+				-- Fallback pure Eiffel
+				from i := 1 until i > l_rows loop
+					from j := 1 until j > l_cols loop
+						check attached {G} numeric.zero_value as l_zero then
+							l_sum := l_zero
+						end
+						from k := 1 until k > l_common loop
+							-- A[batch, i, k] * B[batch, k, j]  (with broadcasting on batch dims)
+							l_sum := l_sum + get_broadcast_item (batch_indices, i, k, True, other)
+										 * get_broadcast_item (batch_indices, k, j, False, other)
+							k := k + 1
+						end
+						l_full_idx_res := batch_indices.deep_twin
+						l_full_idx_res.force (i, l_full_idx_res.count + 1)
+						l_full_idx_res.force (j, l_full_idx_res.count + 1)
+						res.put (l_sum, l_full_idx_res)
+						j := j + 1
 					end
-					from k := 1 until k > l_common loop
-						-- A[batch, i, k] * B[batch, k, j]  (with broadcasting on batch dims)
-						l_sum := l_sum + get_broadcast_item (batch_indices, i, k, True, other)
-									 * get_broadcast_item (batch_indices, k, j, False, other)
-						k := k + 1
-					end
-					l_full_idx_res := batch_indices.deep_twin
-					l_full_idx_res.force (i, l_full_idx_res.count + 1)
-					l_full_idx_res.force (j, l_full_idx_res.count + 1)
-					res.put (l_sum, l_full_idx_res)
-					j := j + 1
+					i := i + 1
 				end
-				i := i + 1
 			end
 		end
 
@@ -1990,6 +2007,58 @@ feature {NONE} -- Matrix Autograd Helpers
 				Result := item (l_full_indices)
 			else
 				Result := other.item (l_full_indices)
+			end
+		end
+
+feature -- Advanced indexing & views
+
+	einsum (equation: STRING; tensors: ARRAY [like Current]): like Current
+			-- Einstein summation convention.
+			-- Evaluate the Einstein summation convention on the operands.
+		do
+			-- TODO: Implement full einsum
+			Result := Current
+		end
+
+	contiguous: like Current
+			-- Force copy if needed for BLAS. Return a contiguous tensor containing the same data.
+		do
+			if is_contiguous then
+				Result := Current
+			else
+				Result := reshape (shape)
+			end
+		end
+
+	to_device (device: ET_DEVICE): like Current
+			-- Move the tensor to the given device (future CUDA/NEON).
+		do
+			-- TODO: Implement device movement
+			Result := Current
+		end
+
+	any_nan: BOOLEAN
+			-- Postcondition helper. Returns True if there are any NaN values.
+		local
+			i, l_count: INTEGER
+			l_offset: INTEGER
+			l_val: REAL_64
+		do
+			Result := False
+			l_count := numel
+			from i := 0 until (i >= l_count) or Result loop
+				l_offset := offset + i * numeric.element_size
+				if attached {REAL_64} numeric.read (data, l_offset) as v64 then
+					l_val := v64
+				elseif attached {REAL_32} numeric.read (data, l_offset) as v32 then
+					l_val := v32.to_double
+				else
+					l_val := 0.0
+				end
+				if l_val /= l_val then -- Standard NaN check
+					Result := True
+				end
+				i := i + 1
 			end
 		end
 
