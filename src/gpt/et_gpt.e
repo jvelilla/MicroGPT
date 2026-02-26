@@ -55,10 +55,10 @@ feature -- Access
     max_seq_len: INTEGER
     rng: RANDOM
 
-    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]
+    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]
             -- All learnable parameters of the model.
         do
-            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]} Result.make
+            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]} Result.make
             Result.append (token_embedding_table.parameters)
             Result.append (position_embedding_table.parameters)
             across blocks as b loop
@@ -93,28 +93,16 @@ feature -- Operation
             targets_match_input: attached targets implies targets.shape ~ idx.shape
         local
             t, b, i, j: INTEGER
-            tok_emb: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            pos_emb: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            x: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            tok_emb: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            pos_emb: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            x: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
             pos: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
             l_elem: ET_NUMERIC_ELEMENT [INTEGER_32]
             start_pos: INTEGER
-            logits_out: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            logits_out: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
 
             -- Loss locals
-            log_sum_exp, log_probs: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            one_hot: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            v_elem: ET_NUMERIC_ELEMENT [REAL_32]
-            numeric_i32: ET_TENSOR_NUMERIC_INTEGER_32
-            target_t: INTEGER
-            t_scale: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            numeric_r32: ET_TENSOR_NUMERIC_REAL_32
-            scalar_shape: ARRAY [INTEGER]
-            loss_val: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-
-            -- Stable Softmax locals
-            max_scalar: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            logits_stable: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            loss_val: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
         do
             if idx.shape.count = 2 then
                 b := idx.shape [1]
@@ -146,7 +134,7 @@ feature -- Operation
             if idx.shape.count = 2 then
                 from j := 1 until j > b loop
                     from i := 1 until i > t loop
-                        l_elem.set_item (start_pos + i)
+                        l_elem.set_item (start_pos + i - 1)
                         pos.put (l_elem, <<j, i>>)
                         i := i + 1
                     end
@@ -154,7 +142,7 @@ feature -- Operation
                 end
             else
                 from i := 1 until i > t loop
-                    l_elem.set_item (start_pos + i)
+                    l_elem.set_item (start_pos + i - 1)
                     pos.put (l_elem, <<i>>)
                     i := i + 1
                 end
@@ -174,6 +162,12 @@ feature -- Operation
 	            io.put_string_32 ({STRING_32} "    [DEBUG] x after embeddings sum mean: " + x.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
             end
 
+            -- Initial RMSNorm after embedding sum (matching Python: x = rmsnorm(x) at line 112)
+            x := ln_f.forward (x)
+            debug
+	            io.put_string_32 ({STRING_32} "    [DEBUG] x after initial rmsnorm mean: " + x.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
+            end
+
             -- 3. Blocks
             debug
 	            io.put_string_32 ({STRING_32} "    [GPT] Running transformer blocks...%N")
@@ -185,14 +179,7 @@ feature -- Operation
 	            io.put_string_32 ({STRING_32} "    [DEBUG] x after transformer blocks mean: " + x.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
             end
 
-            -- 4. Final Layer Norm
-            debug
-	            io.put_string_32 ({STRING_32} "    [GPT] Running final layer norm...%N")
-            end
-            x := ln_f.forward (x)
-            debug
-	            io.put_string_32 ({STRING_32} "    [DEBUG] x after final ln_f mean: " + x.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
-            end
+            -- Note: No final layer norm before lm_head (matching Python reference)
 
             -- 5. LM Head (logits)
             debug
@@ -200,89 +187,9 @@ feature -- Operation
             end
             logits_out := lm_head.forward (x)
 
-            -- 6. Loss (Cross Entropy)
-            debug
-	            io.put_string_32 ({STRING_32} "    [GPT] Checking for targets to compute loss...%N")
-            end
+            -- 6. Fused Cross-Entropy Loss (PyTorch-style)
             if attached targets as tgt then
-                debug
-	                io.put_string_32 ({STRING_32} "    [GPT] Targets found. Computing cross entropy loss...%N")
-	                io.put_string_32 ({STRING_32} "    [GPT] logits_out shape: " + logits_out.show_shape + {STRING_32} "%N")
-
-	                io.put_string_32 ({STRING_32} "    [GPT] Computing exp_val (stable)...%N")
-	                -- Find dimension max value to prevent overflow properly
-	                io.put_string_32 ({STRING_32} "    [DEBUG] logits_out mean: " + logits_out.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
-                end
-                max_scalar := logits_out.max (logits_out.shape.count, True)
-                debug
-	                io.put_string_32 ({STRING_32} "    [DEBUG] max_scalar mean: " + max_scalar.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
-                end
-
-                logits_stable := logits_out - max_scalar
-                debug
-	                io.put_string_32 ({STRING_32} "    [DEBUG] logits_stable mean: " + logits_stable.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
-                end
-
-                -- Stable: log_probs = logits_stable - log_sum_exp(logits_stable)
-                log_sum_exp := logits_stable.exp_val.sum (logits_out.shape.count, False).log_val
-                debug
-	                io.put_string_32 ({STRING_32} "    [DEBUG] log_sum_exp mean: " + log_sum_exp.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
-                end
-                log_probs := logits_stable - log_sum_exp.unsqueeze (log_sum_exp.shape.count + 1)
-
-                -- Construct one-hot target tensor
-                create one_hot.make_zeros (logits_out.shape)
-                one_hot.set_requires_grad (False)
-
-                debug
-	                io.put_string_32 ({STRING_32} "    [GPT] one_hot allocated. shape: " + one_hot.show_shape + {STRING_32} " numel: " + one_hot.numel.out.to_string_32 + {STRING_32} "%N")
-                end
-
-                create v_elem
-                v_elem.set_item ({REAL_32} 1.0)
-                create numeric_i32
-
-                if idx.shape.count = 2 then
-                    from j := 1 until j > b loop
-                        from i := 1 until i > t loop
-                            target_t := numeric_i32.read (tgt.data, tgt.offset + ((j - 1) * t + (i - 1)) * 4).item
-                            -- Targets are already 1-based, so use target_t directly
-                            one_hot.put (v_elem, <<j, i, target_t>>)
-                            i := i + 1
-                        end
-                        j := j + 1
-                    end
-                else
-                    from i := 1 until i > t loop
-                        target_t := numeric_i32.read (tgt.data, tgt.offset + (i - 1) * 4).item
-                        one_hot.put (v_elem, <<i, target_t>>)
-                        i := i + 1
-                    end
-                end
-
-                -- Multiply log_probs by one_hot to extract relevant probabilities
-                -- Sum across all dimensions, multiply by -1 / (B*T)
-                create numeric_r32
-                create scalar_shape.make_empty
-                create t_scale.make_full (scalar_shape, numeric_r32.from_real_64 (-1.0 / (b * t).to_double))
-
-                -- We have to sum all dims. We can do it sequentially:
-                debug
-	                io.put_string_32 ({STRING_32} "    [GPT] Summing dimension losses...%N")
-	                io.put_string_32 ({STRING_32} "    [GPT] log_probs shape: " + log_probs.show_shape + {STRING_32} "%N")
-	                io.put_string_32 ({STRING_32} "    [GPT] one_hot shape: " + one_hot.show_shape + {STRING_32} "%N")
-                end
-                loss_val := log_probs * one_hot
-                from i := loss_val.shape.count until i < 1 loop
-                    loss_val := loss_val.sum (1, False)
-                    i := i - 1
-                end
-
-                loss_val := loss_val * t_scale
-
-                debug
-	                io.put_string_32 ({STRING_32} "    [GPT] Forward pass completed successfully.%N")
-                end
+                loss_val := fused_cross_entropy_loss (logits_out, tgt, b, t)
                 create {ARRAY [detachable ANY]} Result.make_empty
                 Result.force (logits_out, 1)
                 Result.force (loss_val, 2)
@@ -298,6 +205,7 @@ feature -- Operation
             -- `max_new_tokens`: maximum tokens to generate.
             -- `temperature`: sampling temperature (higher = more random).
             -- `stop_token`: token ID to stop generation (e.g., BOS).
+            -- Uses incremental KV-cache: process context once, then one token at a time.
         require
             positive_new_tokens: max_new_tokens > 0
             positive_temperature: temperature > 0.0
@@ -305,67 +213,82 @@ feature -- Operation
             curr_idx: ARRAYED_LIST [INTEGER]
             i_step: INTEGER
             output_arr: ARRAY [detachable ANY]
-            logits_tensor: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            logits_tensor: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
             next_token: INTEGER
             numeric_i32: ET_TENSOR_NUMERIC_INTEGER_32
             t_input: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
             elem_i32: ET_NUMERIC_ELEMENT [INTEGER_32]
-            cond_list: ARRAYED_LIST [INTEGER]
-            start_crop: INTEGER
             k: INTEGER
         do
             create curr_idx.make (idx.numel + max_new_tokens)
             create numeric_i32
-            -- Copy from tensor to arrayed list
+
+            -- Copy initial context from tensor to list
             from i_step := 0 until i_step >= idx.numel loop
                 curr_idx.extend (numeric_i32.read (idx.data, idx.offset + i_step * 4).item)
                 i_step := i_step + 1
             end
 
-            from i_step := 1 until i_step > max_new_tokens loop
-                create cond_list.make_from_iterable (curr_idx)
-                if cond_list.count > max_seq_len then
-                    start_crop := cond_list.count - max_seq_len + 1
-                    cond_list := slice_int (cond_list, start_crop, cond_list.count)
-                end
+            -- Initialize and reset KV cache for incremental generation
+            init_cache (max_seq_len)
+            reset_cache
 
-                create t_input.make_zeros (<<cond_list.count>>)
-                create elem_i32
-                from k := 1 until k > cond_list.count loop
-                    elem_i32.set_item (cond_list [k])
-                    t_input.put (elem_i32, <<k>>)
-                    k := k + 1
-                end
-
-                reset_cache
-                output_arr := forward (t_input, Void)
-                if attached {ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]} output_arr [1] as l_logits then
-                    logits_tensor := l_logits
-                else
-                    create logits_tensor.make_zeros (<<1, 1>>)
-                end
-
-                next_token := sample_token (logits_tensor, temperature)
-
-                if next_token = stop_token then
-                    i_step := max_new_tokens + 1 -- break
-                else
-                    curr_idx.extend (next_token)
-                    i_step := i_step + 1
-                end
+            -- 1. Process the initial context as a batch to populate KV cache
+            create t_input.make_zeros (<<curr_idx.count>>)
+            create elem_i32
+            from k := 1 until k > curr_idx.count loop
+                elem_i32.set_item (curr_idx [k])
+                t_input.put (elem_i32, <<k>>)
+                k := k + 1
             end
+            output_arr := forward (t_input, Void)
+            if attached {ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]} output_arr [1] as l_logits then
+                logits_tensor := l_logits
+            else
+                create logits_tensor.make_zeros (<<1, 1>>)
+            end
+            next_token := sample_token (logits_tensor, temperature)
 
-            Result := curr_idx
+            if next_token = stop_token then
+                Result := curr_idx
+            else
+                curr_idx.extend (next_token)
+
+                -- 2. Generate remaining tokens one at a time (KV cache retains history)
+                from i_step := 2 until i_step > max_new_tokens loop
+                    create t_input.make_zeros (<<1>>)
+                    elem_i32.set_item (curr_idx.last)
+                    t_input.put (elem_i32, <<1>>)
+
+                    output_arr := forward (t_input, Void)
+                    if attached {ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]} output_arr [1] as l_logits then
+                        logits_tensor := l_logits
+                    else
+                        create logits_tensor.make_zeros (<<1, 1>>)
+                    end
+
+                    next_token := sample_token (logits_tensor, temperature)
+
+                    if next_token = stop_token then
+                        i_step := max_new_tokens + 1 -- break
+                    else
+                        curr_idx.extend (next_token)
+                        i_step := i_step + 1
+                    end
+                end
+
+                Result := curr_idx
+            end
         end
 
-    sample_token (logits: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]; temperature: REAL_64): INTEGER
+    sample_token (logits: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]; temperature: REAL_64): INTEGER
         local
             vocab_probs: ARRAYED_LIST [REAL_64]
             sum_exp: REAL_64
             k, last_idx, v_size: INTEGER
             logit_val: REAL_64
             r, acc, l_max_val: REAL_64
-            numeric_r32: ET_TENSOR_NUMERIC_REAL_32
+            numeric_r32: ET_TENSOR_NUMERIC_REAL_64
             data_offset: INTEGER
         do
             -- Logits shape is [B, T, V] or [T, V]. We want the last time step.
@@ -386,8 +309,8 @@ feature -- Operation
             -- Find max logit to prevent overflow
             l_max_val := -1.0e9
             from k := 0 until k >= v_size loop
-                data_offset := logits.offset + (last_idx + k) * 4
-                logit_val := numeric_r32.read (logits.data, data_offset).item.to_double / temperature
+                data_offset := logits.offset + (last_idx + k) * 8
+                logit_val := numeric_r32.read (logits.data, data_offset).item / temperature
                 if logit_val > l_max_val then
                     l_max_val := logit_val
                 end
@@ -395,15 +318,15 @@ feature -- Operation
             end
 
             from k := 0 until k >= v_size loop
-                data_offset := logits.offset + (last_idx + k) * 4
-                logit_val := numeric_r32.read (logits.data, data_offset).item.to_double / temperature
+                data_offset := logits.offset + (last_idx + k) * 8
+                logit_val := numeric_r32.read (logits.data, data_offset).item / temperature
                 sum_exp := sum_exp + exp (logit_val - l_max_val)
                 k := k + 1
             end
 
             from k := 0 until k >= v_size loop
-                data_offset := logits.offset + (last_idx + k) * 4
-                logit_val := numeric_r32.read (logits.data, data_offset).item.to_double / temperature
+                data_offset := logits.offset + (last_idx + k) * 8
+                logit_val := numeric_r32.read (logits.data, data_offset).item / temperature
                 vocab_probs.extend (exp (logit_val - l_max_val) / sum_exp)
                 k := k + 1
             end
@@ -422,6 +345,115 @@ feature -- Operation
                 else
                     k := k + 1
                 end
+            end
+        end
+
+feature {NONE} -- Fused Cross-Entropy Loss (PyTorch-style)
+
+    fused_cross_entropy_loss (logits: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]; tgt: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]; a_b, a_t: INTEGER): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            -- Compute cross-entropy loss with fused backward.
+            -- Instead of building an autograd chain through max/exp/sum/log,
+            -- we compute softmax manually and set a direct backward:
+            --   grad_logits = (softmax(logits) - one_hot) / (B*T)
+        local
+            numeric_r64: ET_TENSOR_NUMERIC_REAL_64
+            numeric_i32: ET_TENSOR_NUMERIC_INTEGER_32
+            v_size, pos, k, target_t: INTEGER
+            max_val, sum_exp, logit_val, prob_val, log_prob_target: REAL_64
+            loss_sum, scale: REAL_64
+            data_offset, tgt_offset: INTEGER
+            grad_tensor: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            grad_elem: ET_NUMERIC_ELEMENT [REAL_64]
+            l_children: ARRAYED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]
+            scalar_shape: ARRAY [INTEGER]
+        do
+            create numeric_r64
+            create numeric_i32
+            create scalar_shape.make_empty
+            v_size := logits.shape [logits.shape.count]
+            scale := 1.0 / (a_b * a_t).to_double
+            loss_sum := 0.0
+
+            -- Create gradient tensor (same shape as logits)
+            create grad_tensor.make_zeros (logits.shape)
+
+            -- For each position, compute softmax, extract target log-prob, store gradient
+            from pos := 0 until pos >= a_b * a_t loop
+                -- Read target token for this position
+                target_t := numeric_i32.read (tgt.data, tgt.offset + pos * 4).item
+
+                -- 1. Find max logit for this position (numerical stability)
+                max_val := -1.0e30
+                from k := 0 until k >= v_size loop
+                    data_offset := logits.offset + (pos * v_size + k) * 8
+                    logit_val := numeric_r64.read (logits.data, data_offset).item
+                    if logit_val > max_val then
+                        max_val := logit_val
+                    end
+                    k := k + 1
+                end
+
+                -- 2. Compute sum of exp(logit - max) for this position
+                sum_exp := 0.0
+                from k := 0 until k >= v_size loop
+                    data_offset := logits.offset + (pos * v_size + k) * 8
+                    logit_val := numeric_r64.read (logits.data, data_offset).item
+                    sum_exp := sum_exp + exp (logit_val - max_val)
+                    k := k + 1
+                end
+
+                -- 3. Compute softmax probs and store gradient = (prob - one_hot) * scale
+                from k := 0 until k >= v_size loop
+                    data_offset := logits.offset + (pos * v_size + k) * 8
+                    logit_val := numeric_r64.read (logits.data, data_offset).item
+                    prob_val := exp (logit_val - max_val) / sum_exp
+
+                    -- Gradient: (softmax_prob - one_hot_indicator) * scale
+                    create grad_elem
+                    if k + 1 = target_t then
+                        -- Target position: grad = (prob - 1) / (B*T)
+                        grad_elem.set_item ((prob_val - 1.0) * scale)
+                        -- Accumulate loss: -log(prob_target)
+                        if prob_val > 1.0e-30 then
+                            loss_sum := loss_sum - log (prob_val) * scale
+                        else
+                            loss_sum := loss_sum + 30.0 * scale -- clamp log(~0)
+                        end
+                    else
+                        -- Non-target: grad = prob / (B*T)
+                        grad_elem.set_item (prob_val * scale)
+                    end
+                    -- Store gradient in grad_tensor
+                    data_offset := grad_tensor.offset + (pos * v_size + k) * 8
+                    numeric_r64.put (grad_tensor.data, data_offset, grad_elem)
+
+                    k := k + 1
+                end
+
+                pos := pos + 1
+            end
+
+            -- Create scalar loss tensor
+            create Result.make_zeros (scalar_shape)
+            create grad_elem
+            grad_elem.set_item (loss_sum)
+            Result.put (grad_elem, scalar_shape)
+
+            -- Wire up autograd: loss.backward() will push grad_tensor to logits
+            Result.set_requires_grad (True)
+            logits.set_requires_grad (True)
+            create l_children.make (1)
+            l_children.extend (logits)
+            Result.set_prev (l_children)
+            Result.set_backward_fn (agent backward_fused_ce (Result, logits, grad_tensor))
+        end
+
+    backward_fused_ce (loss_t, logits, pre_grad: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]])
+            -- Fused CE backward: directly assign pre-computed gradient to logits.
+            -- grad_logits = (softmax - one_hot) / (B*T), already stored in pre_grad.
+        do
+            if attached loss_t.grad then
+                logits.accumulate_grad (pre_grad)
             end
         end
 

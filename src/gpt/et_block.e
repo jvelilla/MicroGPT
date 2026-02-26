@@ -31,10 +31,10 @@ feature -- Access
     attn: ET_MULTI_HEAD_ATTENTION
     mlp: ET_GPT_MLP
 
-    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]
+    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]
             -- Learnable parameters.
         do
-            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]} Result.make
+            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]} Result.make
             Result.append (ln1.parameters)
             Result.append (attn.parameters)
             Result.append (ln2.parameters)
@@ -53,12 +53,12 @@ feature -- Access
 
 feature -- Operation
 
-    forward (x: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+    forward (x: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
             -- Apply block transformation: x + attn(ln1(x)) + mlp(ln2(x)).
         local
-            x_norm, attn_out: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            x_res: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            x_norm2, mlp_out: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            x_norm, attn_out: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            x_res: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            x_norm2, mlp_out: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
         do
             -- x = x + attn(ln1(x))
             x_norm := ln1.forward (x)

@@ -97,6 +97,18 @@ feature -- Typed arithmetic (convenience, used by tensor operations)
 			Result := l_res
 		end
 
+	max_val_element (other: like Current): like Current
+		local
+			l_res: like Current
+		do
+			if is_less (other) then
+				l_res.set_item (other.item)
+			else
+				l_res.set_item (item)
+			end
+			Result := l_res
+		end
+
 feature -- COMPARABLE
 
 	is_less alias "<" (other: like Current): BOOLEAN

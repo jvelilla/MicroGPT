@@ -6,10 +6,10 @@ deferred class
 
 feature -- Access
 
-    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]
+    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]
             -- All parameters of the module.
         do
-            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]} Result.make
+            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]} Result.make
         end
 
 feature -- Training
@@ -17,7 +17,7 @@ feature -- Training
     zero_grad
             -- Reset gradients of all parameters to zero.
         local
-            zero_t: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            zero_t: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
         do
             across parameters as p loop
                 create zero_t.make_zeros (p.shape)

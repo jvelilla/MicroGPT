@@ -86,4 +86,13 @@ feature -- Operations
 			Result.set_item (x.item)
 		end
 
+	max_elements (x, y: ET_BOOLEAN_ELEMENT): ET_BOOLEAN_ELEMENT
+		do
+			if x.item or y.item then
+				Result.set_item (True)
+			else
+				Result.set_item (False)
+			end
+		end
+
 end

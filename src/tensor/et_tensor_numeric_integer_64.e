@@ -72,4 +72,9 @@ feature -- Operations
 			Result := x.div (y)
 		end
 
+	max_elements (x, y: ET_NUMERIC_ELEMENT [INTEGER_64]): ET_NUMERIC_ELEMENT [INTEGER_64]
+		do
+			Result := x.max_val_element (y)
+		end
+
 end

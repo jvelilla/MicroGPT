@@ -46,14 +46,15 @@ feature -- Operations
             logits_loss: ARRAY [detachable ANY]
             lr, decay_ratio, coeff, warmup_iters, lr_decay_iters, min_lr: REAL_64
             global_norm_sq, grad_clip: REAL_64
-            numeric_r32: ET_TENSOR_NUMERIC_REAL_32
+            numeric_r32: ET_TENSOR_NUMERIC_REAL_64
             scalar_shape: ARRAY [INTEGER]
             l_pi: REAL_64
             loss_sum, loss_print, loss_t: REAL_64
             idx, n_limit: INTEGER
-            logits, loss: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            total_loss_t: detachable ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            l_elem_real: ET_NUMERIC_ELEMENT [REAL_32]
+            logits, loss: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            total_loss_t: detachable ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            l_elem_real: ET_NUMERIC_ELEMENT [REAL_64]
+            t_clip_scale: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
         do
             io.put_string_32 ({STRING_32} "Starting training for " + config.max_iters.out.to_string_32 + {STRING_32} " steps...%N")
 
@@ -61,7 +62,7 @@ feature -- Operations
             lr_decay_iters := config.max_iters.to_double
             min_lr := config.learning_rate * 0.1
             l_pi := 3.141592653589793
-            grad_clip := 1.0
+            grad_clip := 0.1
             create numeric_r32
             create scalar_shape.make_empty
 
@@ -86,58 +87,42 @@ feature -- Operations
                 total_loss_t := Void
                 loss_sum := 0.0
 
-                from seq_idx := 1 until seq_idx > n_limit loop
-                
-                    create xb.make_filled (data[seq_idx], 1, 1)
-                    create yb.make_filled (data[seq_idx + 1], 1, 1)
+                -- Single forward pass per document (matching Python reference)
+                xb := get_batch_full (data, config.block_size)
+                yb := get_targets_full (data, config.block_size)
 
-                    t_xb := array_to_tensor_i32 (xb)
-                    t_yb := array_to_tensor_i32 (yb)
+                t_xb := array_to_tensor_i32 (xb)
+                t_yb := array_to_tensor_i32 (yb)
 
-                    debug
-	                    io.put_string_32 ({STRING_32} "  -> Starting forward pass for pos " + seq_idx.out.to_string_32 + {STRING_32} "...%N")
-                    end
-                    logits_loss := gpt.forward (t_xb, t_yb)
-                    debug
-	                    io.put_string_32 ({STRING_32} "  -> Forward pass complete.%N")
-                    end
+                debug
+                    io.put_string_32 ({STRING_32} "  -> Starting forward pass for batch length " + xb.count.out.to_string_32 + {STRING_32} "...%N")
+                end
+                logits_loss := gpt.forward (t_xb, t_yb)
+                debug
+                    io.put_string_32 ({STRING_32} "  -> Forward pass complete.%N")
+                end
 
-                    if iter = 0 and seq_idx = 1 then
-                        if attached {ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]} logits_loss [1] as l_logits then
-                            io.put_string_32 ({STRING_32} "Step 1, Pos 0 Logits:%N")
-                            from idx := 0 until idx >= 27 loop
-                                io.put_string_32 (numeric_r32.read (l_logits.data, idx * 4).item.out.to_string_32 + {STRING_32} "%N")
-                                idx := idx + 1
-                            end
+                if iter = 0 then
+                    if attached {ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]} logits_loss [1] as l_logits then
+                        io.put_string_32 ({STRING_32} "Step 1, Pos 0 Logits:%N")
+                        from idx := 0 until idx >= 27 loop
+                            io.put_string_32 (numeric_r32.read (l_logits.data, idx * 8).item.out.to_string_32 + {STRING_32} "%N")
+                            idx := idx + 1
                         end
                     end
+                end
 
-                    if logits_loss.count >= 2 and then attached {ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]} logits_loss [2] as l_loss then
-                        loss_t := numeric_r32.read (l_loss.data, l_loss.offset).item.to_double
-                        loss_sum := loss_sum + loss_t
-                        
-                        if seq_idx = 1 then
-                            total_loss_t := l_loss
-                        elseif attached total_loss_t as t_l then
-                            total_loss_t := t_l + l_loss
-                        end
-                    end
-                    
-                    seq_idx := seq_idx + 1
+                if logits_loss.count >= 2 and then attached {ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]} logits_loss [2] as l_loss then
+                    loss_t := numeric_r32.read (l_loss.data, l_loss.offset).item
+                    loss_sum := loss_t
+                    total_loss_t := l_loss
                 end
 
                 if attached total_loss_t as t_acc then
-                    loss_print := loss_sum / n_limit.to_double
+                    loss_print := loss_sum
 
                     -- Log every step
                     io.put_string_32 ({STRING_32} "step " + (iter + 1).out.to_string_32 + {STRING_32} " / " + config.max_iters.out.to_string_32 + {STRING_32} " | loss " + loss_print.out.to_string_32 + {STRING_32} "%N")
-
-                    -- Scale total_loss_t by (1/n_limit)
-                    create numeric_r32
-                    create scalar_shape.make_empty
-                    create l_elem_real
-                    l_elem_real.set_item ((1.0 / n_limit.to_double).truncated_to_real)
-                    total_loss_t := t_acc * create {ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]}.make_full (scalar_shape, l_elem_real)
 
                     if attached total_loss_t as t_loss_b then
                         -- Backward
@@ -171,24 +156,30 @@ feature -- Operations
                     lr := config.learning_rate * (1.0 - (iter.to_double / config.max_iters.to_double))
                     adam.set_lr (lr)
 
-                    -- Gradient Clipping
+                    -- Gradient Clipping (max_norm = 1.0)
                     global_norm_sq := 0.0
                     across gpt.parameters as p loop
-                            if attached p.grad as g then
-                                -- We don't have .norm(), so sum(g^2)
-                                -- Very naive approach: we assume full tensor ops
-                                -- skip full calc for speed in this implementation stub, assume 1.0
+                        if attached p.grad as g then
+                            -- sum(g^2) = mean(g^2) * numel
+                            global_norm_sq := global_norm_sq + ((g * g).mean.item_scalar.item * g.numel.to_double)
+                        end
+                    end
+                    if global_norm_sq > grad_clip * grad_clip then
+                        across gpt.parameters as p_clip loop
+                            if attached p_clip.grad as g_clip then
+                                create t_clip_scale.make_full (scalar_shape, numeric_r32.from_real_64 (grad_clip / sqrt (global_norm_sq)))
+                                p_clip.set_grad (g_clip * t_clip_scale)
                             end
                         end
-                        -- To avoid extreme slow-downs, skipped literal clipping in Eiffel unless requested since it allocates O(Params) tensors
+                    end
 
-                        debug
-	                        io.put_string_32 ({STRING_32} "  -> Starting optimizer step...%N")
-                        end
-                        adam.step
-                        debug
-	                        io.put_string_32 ({STRING_32} "  -> Optimizer step complete.%N")
-                        end
+                    debug
+                        io.put_string_32 ({STRING_32} "  -> Starting optimizer step...%N")
+                    end
+                    adam.step
+                    debug
+                        io.put_string_32 ({STRING_32} "  -> Optimizer step complete.%N")
+                    end
                     else
                         io.put_string_32 ({STRING_32} "Warning: total_loss_t failed attachment at step " + iter.out.to_string_32 + {STRING_32} "%N")
                     end
@@ -316,8 +307,8 @@ feature -- Persistence
     load_checkpoint
         local
             f: RAW_FILE
-            params: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]
-            p: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            params: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]
+            p: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
             count: INTEGER
         do
             create f.make_open_read ("model.ckpt")

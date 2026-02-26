@@ -32,23 +32,23 @@ feature -- Access
     dim: INTEGER
     epsilon: REAL_64
 
-    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]
+    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]
             -- Empty parameters (no learnable affine parameters in microgpt ref).
         do
-            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]} Result.make
+            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]} Result.make
         end
 
 feature -- Operation
 
-    forward (x: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+    forward (x: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
             -- Normalize input `x` across the last dimension.
         require
             valid_input: x.shape [x.shape.count] = dim
         local
-            ms, scale: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            numeric_helper: ET_TENSOR_NUMERIC_REAL_32
+            ms, scale: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            numeric_helper: ET_TENSOR_NUMERIC_REAL_64
             scalar_shape: ARRAY [INTEGER]
-            t_eps, t_dim: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            t_eps, t_dim: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
         do
             create numeric_helper
             create scalar_shape.make_empty

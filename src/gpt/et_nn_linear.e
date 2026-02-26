@@ -22,8 +22,8 @@ feature -- Initialization
             -- `outc`: output channels.
             -- `bias`: whether to include bias term.
         local
-            t_scale: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            numeric_helper: ET_TENSOR_NUMERIC_REAL_32
+            t_scale: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            numeric_helper: ET_TENSOR_NUMERIC_REAL_64
         do
             create numeric_helper
             
@@ -46,14 +46,14 @@ feature -- Initialization
 
 feature -- Access
 
-    weight: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-    b: detachable ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+    weight: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+    b: detachable ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
     in_channels, out_channels: INTEGER
 
-    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]
+    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]
             -- Learnable parameters (weights + optional bias).
         do
-            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]} Result.make
+            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]} Result.make
             Result.extend (weight)
             if attached b as bias_vec then
                 Result.extend (bias_vec)
@@ -62,7 +62,7 @@ feature -- Access
 
 feature -- Operation
 
-    forward (x: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+    forward (x: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
             -- Apply linear transformation to `x`.
             -- `x` shape: [..., in_channels]
         require

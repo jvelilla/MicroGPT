@@ -102,12 +102,13 @@ feature -- Operations
         
     decode (indices: ARRAY [INTEGER]): STRING_32
             -- Decode sequence of `indices` back to text.
+            -- BOS tokens are filtered out (not rendered).
         local
             res: STRING_32
         do
             create res.make_empty
             across indices as idx loop
-                if itos.has (idx) then
+                if idx /= bos_token_id and then itos.has (idx) then
                     res.append_character (itos.item (idx))
                 end
             end

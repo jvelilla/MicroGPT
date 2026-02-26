@@ -68,4 +68,8 @@ feature -- Operations
 		deferred
 		end
 
+	max_elements (x, y: G): G
+		deferred
+		end
+
 end

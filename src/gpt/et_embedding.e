@@ -21,8 +21,8 @@ feature -- Initialization
             -- `vocab_size`: number of embeddings.
             -- `n_embd`: embedding dimension.
         local
-            t_scale: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            numeric_helper: ET_TENSOR_NUMERIC_REAL_32
+            t_scale: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            numeric_helper: ET_TENSOR_NUMERIC_REAL_64
         do
             create numeric_helper
             create weight.make_randn (<<vocab_size, n_embd>>)
@@ -38,19 +38,19 @@ feature -- Initialization
 
 feature -- Access
 
-    weight: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+    weight: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
     num_embeddings, embedding_dim: INTEGER
 
-    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]
+    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]
             -- Learnable weight parameters.
         do
-            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]} Result.make
+            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]]} Result.make
             Result.extend (weight)
         end
 
 feature -- Operation
 
-    forward (idx: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+    forward (idx: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
             -- Retrieve embedding vectors for indices `idx`.
             -- `idx` shape: [batch_size, seq_len] or [seq_len]
             -- Returns shape: [batch_size, seq_len, embedding_dim] or [seq_len, embedding_dim]
@@ -58,9 +58,10 @@ feature -- Operation
             res_shape: ARRAY [INTEGER]
             i, j, flat_idx, w_offset, res_offset: INTEGER
             numeric_i32: ET_TENSOR_NUMERIC_INTEGER_32
-            numeric_r32: ET_TENSOR_NUMERIC_REAL_32
+            numeric_r32: ET_TENSOR_NUMERIC_REAL_64
             val: INTEGER_32
-            elem_size: INTEGER
+            i32_size: INTEGER  -- byte size for INTEGER_32 index tensor
+            float_size: INTEGER  -- byte size for REAL_64 weight/result tensors
             w_stride_0: INTEGER
         do
             create res_shape.make_from_array (idx.shape)
@@ -69,19 +70,20 @@ feature -- Operation
             create Result.make_zeros (res_shape)
             create numeric_i32
             create numeric_r32
-            elem_size := 4
+            i32_size := 4
+            float_size := 8
             
             w_stride_0 := embedding_dim -- elements per row
             -- Gather embeddings efficiently
             from i := 0 until i >= idx.numel loop
-                val := numeric_i32.read (idx.data, idx.offset + i * elem_size).item
+                val := numeric_i32.read (idx.data, idx.offset + i * i32_size).item
                 if val > 0 and then val <= num_embeddings then 
                     flat_idx := val.to_integer_32 - 1
                     
-                    w_offset := weight.offset + flat_idx * w_stride_0 * elem_size
-                    res_offset := Result.offset + i * embedding_dim * elem_size
+                    w_offset := weight.offset + flat_idx * w_stride_0 * float_size
+                    res_offset := Result.offset + i * embedding_dim * float_size
                     from j := 0 until j >= w_stride_0 loop
-                        numeric_r32.put (Result.data, res_offset + j * elem_size, numeric_r32.read (weight.data, w_offset + j * elem_size))
+                        numeric_r32.put (Result.data, res_offset + j * float_size, numeric_r32.read (weight.data, w_offset + j * float_size))
                         j := j + 1
                     end
                 end
@@ -97,16 +99,16 @@ feature -- Operation
 
 feature {NONE} -- Autograd
 
-    backward_embedding (res: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]; cur: ET_EMBEDDING; idx: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]])
+    backward_embedding (res: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]; cur: ET_EMBEDDING; idx: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]])
         local
-            g: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            grad_w: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            g: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
+            grad_w: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]
             i, j, flat_idx, w_offset, res_offset: INTEGER
             numeric_i32: ET_TENSOR_NUMERIC_INTEGER_32
-            numeric_r32: ET_TENSOR_NUMERIC_REAL_32
+            numeric_r32: ET_TENSOR_NUMERIC_REAL_64
             val: INTEGER_32
-            elem_size, w_stride_0: INTEGER
-            l_gv, l_wv: REAL_32
+            i32_size, float_size, w_stride_0: INTEGER
+            l_gv, l_wv: REAL_64
         do
             if attached res.grad as l_g then
                 g := l_g
@@ -114,20 +116,21 @@ feature {NONE} -- Autograd
                     create grad_w.make_zeros (cur.weight.shape)
                     create numeric_i32
                     create numeric_r32
-                    elem_size := 4
+                    i32_size := 4
+                    float_size := 8
                     w_stride_0 := cur.embedding_dim
 
                     from i := 0 until i >= idx.numel loop
-                        val := numeric_i32.read (idx.data, idx.offset + i * elem_size).item
+                        val := numeric_i32.read (idx.data, idx.offset + i * i32_size).item
                         if val > 0 and then val <= cur.num_embeddings then
                             flat_idx := val.to_integer_32 - 1
-                            w_offset := grad_w.offset + flat_idx * w_stride_0 * elem_size
-                            res_offset := g.offset + i * cur.embedding_dim * elem_size
+                            w_offset := grad_w.offset + flat_idx * w_stride_0 * float_size
+                            res_offset := g.offset + i * cur.embedding_dim * float_size
 
                             from j := 0 until j >= w_stride_0 loop
-                                l_gv := numeric_r32.read (g.data, res_offset + j * elem_size).item
-                                l_wv := numeric_r32.read (grad_w.data, w_offset + j * elem_size).item
-                                numeric_r32.put (grad_w.data, w_offset + j * elem_size, numeric_r32.from_real_64 ((l_wv + l_gv).to_double))
+                                l_gv := numeric_r32.read (g.data, res_offset + j * float_size).item
+                                l_wv := numeric_r32.read (grad_w.data, w_offset + j * float_size).item
+                                numeric_r32.put (grad_w.data, w_offset + j * float_size, numeric_r32.from_real_64 (l_wv + l_gv))
                                 j := j + 1
                             end
                         end
