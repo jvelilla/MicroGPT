@@ -17,6 +17,7 @@ feature -- Initialization
         local
             l_env: ET_ENV
         do
+        	power_test
             print ("Configuring Environment...%N")
             create l_env
             l_env.append_to_path ("spec\openblas\bin")
@@ -28,6 +29,16 @@ feature -- Initialization
             test_blas
             test_safe_tensors
             print ("All Tests Passed!%N")
+        end
+
+
+	power_test
+	    local
+            d: REAL_64
+        do
+            d := -2.0
+            print ("(-2.0) ^ 3.0 = " + d.power (3.0).out + "%N")
+            print ("(-2.0) ^ 1.5 = " + d.power (1.5).out + "%N")
         end
 
 feature -- Tests

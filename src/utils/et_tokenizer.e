@@ -83,6 +83,7 @@ feature -- Operations
             i: INTEGER
         do
             create res.make (text.count + 2)
+            res.extend (bos_token_id)
             from
                 i := 1
             until

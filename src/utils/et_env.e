@@ -23,7 +23,6 @@ feature -- Access
 		local
 			l_exec: EXECUTION_ENVIRONMENT
 			l_current_path: STRING_32
-			l_new_path: STRING_8
 		do
 			create l_exec
 			if attached l_exec.item ("PATH") as p then

@@ -65,7 +65,6 @@ feature -- Tests
 		local
 			A, B, C: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
 			shape_A, shape_B: ARRAY [INTEGER]
-			indices: ARRAY [INTEGER]
 			tol: REAL_64
 			v: REAL_32
 			l_elem: ET_NUMERIC_ELEMENT [REAL_32]
@@ -310,6 +309,79 @@ feature -- Tests
 				assert_approx_32 (g_y.item (<<1>>).item, 3.0, tol, "dz/dy should be 3.0")
 			else
 				assert ("y.grad is not null", False)
+			end
+			
+			print ("OK%N")
+		end
+
+	test_attention_autograd
+		local
+			q, k, v, att, att_probs, l_out, loss: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+			tol: REAL_64
+			l_elem: ET_NUMERIC_ELEMENT [REAL_32]
+			t_scale: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+			b, t, c: INTEGER
+			causal_mask: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+			t1, t2: INTEGER
+			scalar_shape: ARRAY [INTEGER]
+		do
+			print ("  [TEST] Attention Autograd... ")
+			tol := 1.0e-4
+			
+			b := 2
+			t := 3
+			c := 4
+			
+			create q.make_ones (<<b, t, c>>)
+			create k.make_ones (<<b, t, c>>)
+			create v.make_ones (<<b, t, c>>)
+			
+			q.set_requires_grad (True)
+			k.set_requires_grad (True)
+			v.set_requires_grad (True)
+			
+			att := q.matmul (k.transpose (2, 3))
+			
+			create scalar_shape.make_empty
+			create l_elem
+			l_elem.set_item ((1.0 / c.to_double.power (0.5)).truncated_to_real)
+			create t_scale.make_full (scalar_shape, l_elem)
+			att := att * t_scale
+			
+			create causal_mask.make_zeros (<<t, t>>)
+			create l_elem
+			l_elem.set_item ({REAL_32} -1.0e9)
+			
+			from t1 := 1 until t1 > t loop
+				from t2 := t1 + 1 until t2 > t loop
+					causal_mask.put (l_elem, <<t1, t2>>)
+					t2 := t2 + 1
+				end
+				t1 := t1 + 1
+			end
+			
+			att := att + causal_mask
+			
+			att_probs := att.exp_val
+			att_probs := att_probs / att_probs.sum (3, True)
+			
+			l_out := att_probs.matmul (v)
+			
+			loss := l_out.sum (1, False).sum (1, False).sum (1, False)
+			loss.backward
+			
+			if attached q.grad as g_q then
+				print ("%N[DEBUG] q grad mean: " + g_q.mean.item_scalar.item.out + "%N")
+				assert_approx_32 (g_q.mean.item_scalar.item, 0.0, 1.0, "q grad mean")
+			end
+			
+			if attached v.grad as g_v then
+				print ("[DEBUG] v grad mean: " + g_v.mean.item_scalar.item.out + "%N")
+				assert_approx_32 (g_v.mean.item_scalar.item, 1.0, 1.0e-3, "v grad mean")
+			end
+			
+			if attached k.grad as g_k then
+				print ("[DEBUG] k grad mean: " + g_k.mean.item_scalar.item.out + "%N")
 			end
 			
 			print ("OK%N")

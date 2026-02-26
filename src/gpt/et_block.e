@@ -31,10 +31,10 @@ feature -- Access
     attn: ET_MULTI_HEAD_ATTENTION
     mlp: ET_GPT_MLP
 
-    parameters: LIST [ET_VALUE]
+    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]
             -- Learnable parameters.
         do
-            create {LINKED_LIST [ET_VALUE]} Result.make
+            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]} Result.make
             Result.append (ln1.parameters)
             Result.append (attn.parameters)
             Result.append (ln2.parameters)
@@ -45,7 +45,7 @@ feature -- Access
         do
             attn.init_cache (max_len)
         end
-        
+
     reset_cache
         do
             attn.reset_cache
@@ -53,96 +53,43 @@ feature -- Access
 
 feature -- Operation
 
-    forward (x: LIST [LIST [ET_VALUE]]): LIST [LIST [ET_VALUE]]
+    forward (x: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
             -- Apply block transformation: x + attn(ln1(x)) + mlp(ln2(x)).
-        require
-            input_valid: not x.is_empty
         local
-            x_norm: LIST [LIST [ET_VALUE]] -- (T, C)
-            attn_out: LIST [LIST [ET_VALUE]]
-            x_res: LINKED_LIST [LIST [ET_VALUE]]
-            i: INTEGER
-            row_orig, row_attn: ARRAYED_LIST [ET_VALUE]
-            row: LINKED_LIST [ET_VALUE]
-            j: INTEGER
-            val: ET_VALUE
-            
-            x_norm2: LINKED_LIST [LIST [ET_VALUE]]
-            mlp_out: LIST [LIST [ET_VALUE]]
-            x_final: LINKED_LIST [LIST [ET_VALUE]]
-            row_mlp: ARRAYED_LIST [ET_VALUE]
-             -- reuse row variable, distinct from above? No, local vars are function scoped.
-             -- I need to ensure `row` is not redeclared if I used specific list above.
-             -- Checked previous edit, `row` is local.
-             -- I assume `row` handles both sections.
-             -- Just check line 102.
-            
-            t_count: INTEGER
+            x_norm, attn_out: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            x_res: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            x_norm2, mlp_out: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
         do
-            t_count := x.count
-            
             -- x = x + attn(ln1(x))
-            
-            -- 1. ln1(x)
-            create {LINKED_LIST [LIST [ET_VALUE]]} x_norm.make
-            across x as row_x loop
-                x_norm.extend (ln1.forward (row_x))
+            x_norm := ln1.forward (x)
+            debug
+	            io.put_string_32 ({STRING_32} "      [DEBUG] block ln1 out mean: " + x_norm.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
             end
-            
-            -- 2. attn(x_norm)
+
             attn_out := attn.forward (x_norm)
-            
-            -- 3. x + attn_out
-            create x_res.make
-            -- We need to zip x and attn_out
-            -- Using index
-            from i := 1 until i > t_count loop
-                create row_orig.make_from_iterable (x.i_th (i))
-                create row_attn.make_from_iterable (attn_out.i_th (i))
-                create {LINKED_LIST [ET_VALUE]} row.make
-                
-                from j := 1 until j > row_orig.count loop
-                    val := row_orig [j] + row_attn [j]
-                    row.extend (val)
-                    j := j + 1
-                end
-                x_res.extend (row)
-                i := i + 1
+            debug
+	            io.put_string_32 ({STRING_32} "      [DEBUG] block attn out mean: " + attn_out.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
             end
-            
+
+            x_res := x + attn_out
+            debug
+	            io.put_string_32 ({STRING_32} "      [DEBUG] block res1 mean: " + x_res.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
+            end
+
             -- x = x + mlp(ln2(x))
-            
-            -- 4. ln2(x_res)
-            create x_norm2.make
-            across x_res as row_r loop
-                x_norm2.extend (ln2.forward (row_r))
+            x_norm2 := ln2.forward (x_res)
+            debug
+	            io.put_string_32 ({STRING_32} "      [DEBUG] block ln2 out mean: " + x_norm2.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
             end
-            
-            -- 5. mlp(x_norm2) -> applied row-wise
-            create {LINKED_LIST [LIST [ET_VALUE]]} mlp_out.make
-            across x_norm2 as row_n loop
-                mlp_out.extend (mlp.forward (row_n))
+
+            mlp_out := mlp.forward (x_norm2)
+            debug
+	            io.put_string_32 ({STRING_32} "      [DEBUG] block mlp out mean: " + mlp_out.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
             end
-            
-            -- 6. x_res + mlp_out
-            create x_final.make
-            from i := 1 until i > t_count loop
-                create row_orig.make_from_iterable (x_res.i_th (i))
-                create row_mlp.make_from_iterable (mlp_out.i_th (i))
-                create {LINKED_LIST [ET_VALUE]} row.make
-                
-                from j := 1 until j > row_orig.count loop
-                    val := row_orig [j] + row_mlp [j]
-                    row.extend (val)
-                    j := j + 1
-                end
-                x_final.extend (row)
-                i := i + 1
-            end
-            
-            Result := x_final
+
+            Result := x_res + mlp_out
         ensure
-            shape_preserved: Result.count = x.count
+            shape_preserved: Result.shape ~ x.shape
         end
 
 end

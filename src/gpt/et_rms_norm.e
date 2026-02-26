@@ -32,48 +32,59 @@ feature -- Access
     dim: INTEGER
     epsilon: REAL_64
 
-    parameters: LIST [ET_VALUE]
+    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]
             -- Empty parameters (no learnable affine parameters in microgpt ref).
         do
-            create {LINKED_LIST [ET_VALUE]} Result.make
+            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]} Result.make
         end
 
 feature -- Operation
 
-    forward (x: LIST [ET_VALUE]): LIST [ET_VALUE]
-            -- Normalize input `x`.
+    forward (x: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            -- Normalize input `x` across the last dimension.
         require
-            valid_input: x.count = dim
+            valid_input: x.shape [x.shape.count] = dim
         local
-            ms, scale: ET_VALUE
-            x_arr: ARRAYED_LIST [ET_VALUE]
-            out_list: LINKED_LIST [ET_VALUE]
-            i: INTEGER
-            val: ET_VALUE
+            ms, scale: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            numeric_helper: ET_TENSOR_NUMERIC_REAL_32
+            scalar_shape: ARRAY [INTEGER]
+            t_eps, t_dim: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
         do
-            create x_arr.make_from_iterable (x)
-            create out_list.make
-            
-            -- Calculate Mean Square
-            ms := create {ET_VALUE}.make (0.0)
-            across x as v loop
-                ms := ms + (v ^ 2.0)
+            create numeric_helper
+            create scalar_shape.make_empty
+
+            -- Mean Square: ms = (x^2).mean(dim)
+            ms := (x * x).sum (x.shape.count, False)
+            debug
+	            io.put_string_32 ({STRING_32} "        [DEBUG] ln ms after sum mean: " + ms.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
             end
-            ms := ms * create {ET_VALUE}.make (1.0 / dim)
-            
-            -- Calculate scale = (ms + eps) ^ -0.5
-            scale := (ms + create {ET_VALUE}.make (epsilon)) ^ -0.5
-            
+
+            create t_dim.make_full (scalar_shape, numeric_helper.from_real_64 (dim.to_double))
+            ms := ms / t_dim
+            debug
+	            io.put_string_32 ({STRING_32} "        [DEBUG] ln ms after div mean: " + ms.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
+            end
+
+            -- add eps
+            create t_eps.make_full (scalar_shape, numeric_helper.from_real_64 (epsilon))
+            ms := ms + t_eps
+
+            -- scale = ms ^ -0.5
+            scale := ms ^ -0.5
+            debug
+	            io.put_string_32 ({STRING_32} "        [DEBUG] ln scale after pow mean: " + scale.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
+            end
+
+            -- Unsqueeze to match shape for broadcasting back over the features dimension
+            scale := scale.unsqueeze (scale.shape.count + 1)
+
             -- Normalize: y = x * scale
-            from i := 1 until i > dim loop
-                val := x_arr [i] * scale
-                out_list.extend (val)
-                i := i + 1
+            Result := x * scale
+            debug
+	            io.put_string_32 ({STRING_32} "        [DEBUG] ln Result mean: " + Result.mean.item_scalar.out.to_string_32 + {STRING_32} "%N")
             end
-            
-            Result := out_list
         ensure
-            output_size_matches: Result.count = dim
+            same_shape: Result.shape ~ x.shape
         end
 
 end

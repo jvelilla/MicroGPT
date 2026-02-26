@@ -20,7 +20,7 @@ create
 	make_from_real_64_array,
 	make_from_pointer
 
-feature {NONE} -- Initialization
+feature {ET_TENSOR} -- Initialization
 
 	numeric: ET_TENSOR_NUMERIC [G]
 			-- Lazy initialization of the type-specific strategy.
@@ -411,6 +411,35 @@ feature -- Element Change
 			numeric.put (data, l_offset, v)
 		end
 
+	copy_from (other: ET_TENSOR [G])
+			-- Copy data from `other` tensor into `Current`.
+			-- Handles arbitrary strides on both sides using recursive iteration.
+		require
+			same_numel: numel = other.numel
+		local
+			l_indices: ARRAY [INTEGER]
+		do
+			if numel > 0 then
+				create l_indices.make_filled (1, 1, shape.count)
+				recursive_copy_from (1, l_indices, other)
+			end
+		end
+
+	recursive_copy_from (dim_idx: INTEGER; indices: ARRAY [INTEGER]; other: ET_TENSOR [G])
+		local
+			i: INTEGER
+		do
+			if dim_idx > shape.count then
+				put (other.item (indices), indices)
+			else
+				from i := 1 until i > shape [dim_idx] loop
+					indices [dim_idx] := i
+					recursive_copy_from (dim_idx + 1, indices, other)
+					i := i + 1
+				end
+			end
+		end
+
 feature -- Autograd Topology
 
 	backward
@@ -709,6 +738,8 @@ feature {ET_TENSOR} -- Relu Eval Helper
 			end
 		end
 
+feature {ANY} -- Non-linear Operations (cont.)
+
 	tanh: ET_TENSOR [G]
 			-- Element-wise Hyperbolic Tangent.
 		local
@@ -726,7 +757,7 @@ feature {ET_TENSOR} -- Relu Eval Helper
 
 			from i := 0 until i >= l_count loop
 				l_offset := offset + i * numeric.element_size
-				if attached {REAL_64} numeric.read (data, l_offset) as val64 then l_val := val64 else l_val := 0.0 end
+				l_val := numeric.to_real_64 (numeric.read (data, l_offset))
 
 				if l_val > 20.0 then
 					l_t := 1.0
@@ -789,7 +820,7 @@ feature {ET_TENSOR} -- Relu Eval Helper
 			l_count := numel
 
 			from i := 0 until i >= l_count loop
-				if attached {REAL_64} numeric.read (data, offset + i * 4) as v64 then l_val := v64 elseif attached {REAL_32} numeric.read (data, offset + i * 4) as v32 then l_val := v32.to_double elseif attached {INTEGER_32} numeric.read (data, offset + i * 4) as i32 then l_val := i32.to_double elseif attached {INTEGER_64} numeric.read (data, offset + i * 4) as i64 then l_val := i64.to_double else l_val := 0.0 end
+                l_val := numeric.to_real_64 (numeric.read (data, offset + i * numeric.element_size))
 
 				l_t := l_math.exp (l_val)
 
@@ -821,11 +852,9 @@ feature {ET_TENSOR} -- Relu Eval Helper
 			
 			create l_math
 			l_count := numel
-
 			from i := 0 until i >= l_count loop
-				if attached {REAL_64} numeric.read (data, offset + i * 4) as v64 then l_val := v64 elseif attached {REAL_32} numeric.read (data, offset + i * 4) as v32 then l_val := v32.to_double elseif attached {INTEGER_32} numeric.read (data, offset + i * 4) as i32 then l_val := i32.to_double elseif attached {INTEGER_64} numeric.read (data, offset + i * 4) as i64 then l_val := i64.to_double else l_val := 0.0 end
-
-				l_t := l_math.log (l_val)
+                l_val := numeric.to_real_64 (numeric.read (data, offset + i * numeric.element_size))
+                l_t := l_math.log (l_val)
 
 				numeric.put (l_res.data, i * numeric.element_size, numeric.from_real_64 (l_t))
 				i := i + 1
@@ -853,11 +882,9 @@ feature {ET_TENSOR} -- Relu Eval Helper
 			create l_res.make_zeros (shape)
 			
 			l_count := numel
-
 			from i := 0 until i >= l_count loop
-				if attached {REAL_64} numeric.read (data, offset + i * 4) as v64 then l_val := v64 elseif attached {REAL_32} numeric.read (data, offset + i * 4) as v32 then l_val := v32.to_double elseif attached {INTEGER_32} numeric.read (data, offset + i * 4) as i32 then l_val := i32.to_double elseif attached {INTEGER_64} numeric.read (data, offset + i * 4) as i64 then l_val := i64.to_double else l_val := 0.0 end
-
-				l_t := l_val.power (p_val)
+                l_val := numeric.to_real_64 (numeric.read (data, offset + i * numeric.element_size))
+                l_t := l_val.power (p_val)
 
 				numeric.put (l_res.data, i * numeric.element_size, numeric.from_real_64 (l_t))
 				i := i + 1
@@ -966,6 +993,68 @@ feature {NONE} -- Element-wise Autograd Helpers
 						create l_p.make_full (a.shape, p_g)
 						a.accumulate_grad (g * (l_p * a.power (p_val - 1.0)))
 					end
+				end
+			end
+		end
+
+	backward_transpose (res, a: ET_TENSOR [G]; dim1, dim2: INTEGER)
+		do
+			if attached res.grad as g then
+				if a.requires_grad then
+					a.accumulate_grad (g.transpose (dim1, dim2))
+				end
+			end
+		end
+
+	backward_view (res, a: ET_TENSOR [G]; orig_shape: ARRAY [INTEGER])
+		do
+			if attached res.grad as g then
+				if a.requires_grad then
+					a.accumulate_grad (g.view (orig_shape))
+				end
+			end
+		end
+
+	backward_narrow (res, a: ET_TENSOR [G]; a_dim, start_index, length: INTEGER)
+		local
+			l_grad: ET_TENSOR [G]
+		do
+			if attached res.grad as g then
+				if a.requires_grad then
+					create l_grad.make_zeros (a.shape)
+					l_grad.narrow (a_dim, start_index, length).copy_from (g)
+					a.accumulate_grad (l_grad)
+				end
+			end
+		end
+
+	backward_squeeze (res, a: ET_TENSOR [G]; a_dim: INTEGER)
+		do
+			if attached res.grad as g then
+				if a.requires_grad then
+					a.accumulate_grad (g.unsqueeze (a_dim))
+				end
+			end
+		end
+
+	backward_unsqueeze (res, a: ET_TENSOR [G]; a_dim: INTEGER)
+		do
+			if attached res.grad as g then
+				if a.requires_grad then
+					a.accumulate_grad (g.squeeze (a_dim))
+				end
+			end
+		end
+
+	backward_slice_step (res, a: ET_TENSOR [G]; a_dim, start_index, end_index, step: INTEGER)
+		local
+			l_grad: ET_TENSOR [G]
+		do
+			if attached res.grad as g then
+				if a.requires_grad then
+					create l_grad.make_zeros (a.shape)
+					l_grad.slice_step (a_dim, start_index, end_index, step).copy_from (g)
+					a.accumulate_grad (l_grad)
 				end
 			end
 		end
@@ -1136,7 +1225,6 @@ feature {ANY} -- Arithmetic Autograd Helpers
 	g_negated (t: ET_TENSOR [G]): ET_TENSOR [G]
 		local
 			l_res: ET_TENSOR [G]
-			l_children: ARRAYED_LIST [ET_TENSOR [G]]
 			
 		do
 			
@@ -1152,7 +1240,6 @@ feature {ANY} -- Arithmetic Autograd Helpers
 			-- Reverse the effect of broadcasting by summing over expanded dimensions.
 		local
 			l_res: ET_TENSOR [G]
-			l_children: ARRAYED_LIST [ET_TENSOR [G]]
 			i, l_offset, dim_idx: INTEGER
 			do
 			l_res := g_in
@@ -1223,7 +1310,7 @@ feature {ANY} -- Arithmetic Autograd Helpers
 		local
 			l_new_shape: ARRAY [INTEGER]
 			l_res: ET_TENSOR [G]
-			l_children: ARRAYED_LIST [ET_TENSOR [G]]
+			
 			i, j: INTEGER
 			l_total_size_at_dim: INTEGER
 			t: ET_TENSOR [G]
@@ -1325,7 +1412,7 @@ feature -- Reductions
 			l_divisor: G
 			
 			l_res: ET_TENSOR [G]
-			l_children: ARRAYED_LIST [ET_TENSOR [G]]
+			
 			do
 			l_sum := sum (a_dim, keep_dim)
 			
@@ -1431,7 +1518,7 @@ feature -- Extra Properties
 			-- Calculate the standard deviation of all elements in the tensor.
 		local
 			l_res: ET_TENSOR [G]
-			l_children: ARRAYED_LIST [ET_TENSOR [G]]
+			
 			l_count: INTEGER
 			
 			i: INTEGER
@@ -1536,7 +1623,7 @@ feature {NONE} -- Reduction Helpers
 		local
 			i, k: INTEGER
 			l_source_indices: ARRAY [INTEGER]
-			l_acc: G
+			l_acc: detachable G
 			l_val: G
 			l_indices_copy: ARRAY [INTEGER]
 		do
@@ -1580,11 +1667,15 @@ feature {NONE} -- Reduction Helpers
 							l_acc := op.item ([res.item(indices), l_val])
 						end
 					else
-						l_acc := op.item ([l_acc, l_val])
+						if attached l_acc as att_acc then
+							l_acc := op.item ([att_acc, l_val])
+						end
 					end
 					i := i + 1
 				end
-				res.put (l_acc, indices)
+				if attached l_acc as att_acc then
+					res.put (att_acc, indices)
+				end
 			else
 				from i := 1 until i > res.shape [dim_idx] loop
 					l_indices_copy := indices.deep_twin
@@ -1599,7 +1690,7 @@ feature {NONE} -- Reduction Helpers
 		local
 			i, k: INTEGER
 			l_source_indices: ARRAY [INTEGER]
-			l_max_val: G
+			l_max_val: detachable G
 			l_val: G
 			l_max_idx: INTEGER
 			l_indices_copy: ARRAY [INTEGER]
@@ -1631,7 +1722,7 @@ feature {NONE} -- Reduction Helpers
 						l_max_val := l_val
 						l_max_idx := 1 -- 1-based index (PyTorch uses 0-based? Eiffel usually 1-based, let's stick to 1-based for now)
 					else
-						if l_val > l_max_val then
+						if attached l_max_val as att_max and then l_val > att_max then
 							l_max_val := l_val
 							l_max_idx := i
 						end
@@ -1673,7 +1764,7 @@ feature -- Matrix Operations
 			l_new_shape: ARRAY [INTEGER]
 			l_res: ET_TENSOR [G]
 			l_children: ARRAYED_LIST [ET_TENSOR [G]]
-			l_dot: G
+			l_dot: detachable G
 			i, j: INTEGER
 			l_idx_a, l_idx_b: ARRAY [INTEGER]
 		do
@@ -1685,13 +1776,17 @@ feature -- Matrix Operations
 					if i = 1 then
 						l_dot := item (l_idx_a) * other.item (l_idx_a)
 					else
-						l_dot := l_dot + (item (l_idx_a) * other.item (l_idx_a))
+						if attached l_dot as att_dot then
+							l_dot := att_dot + (item (l_idx_a) * other.item (l_idx_a))
+						end
 					end
 					i := i + 1
 				end
 				create l_new_shape.make_empty
 				create l_res.make_zeros (l_new_shape)
-				l_res.put (l_dot, create {ARRAY [INTEGER]}.make_empty)
+				if attached l_dot as att_dot then
+					l_res.put (att_dot, create {ARRAY [INTEGER]}.make_empty)
+				end
 
 				if requires_grad or other.requires_grad then
 					l_res.set_requires_grad (True)
@@ -2072,6 +2167,7 @@ feature -- View Operations
 		local
 			l_new_shape: ARRAY [INTEGER]
 			l_new_strides: ARRAY [INTEGER]
+			l_children: ARRAYED_LIST [ET_TENSOR [G]]
 		do
 			l_new_shape := shape.deep_twin
 			l_new_strides := strides.deep_twin
@@ -2083,6 +2179,14 @@ feature -- View Operations
 			l_new_strides [dim2] := strides [dim1]
 
 			create Result.make_from_pointer (data, offset, l_new_shape, l_new_strides)
+			
+			if requires_grad then
+				Result.set_requires_grad (True)
+				create l_children.make (1)
+				l_children.extend (Current)
+				Result.set_prev (l_children)
+				Result.set_backward_fn (agent backward_transpose (Result, Current, dim1, dim2))
+			end
 		ensure
 			same_data: Result.data = data
 		end
@@ -2125,6 +2229,7 @@ feature -- View Operations
 			l_new_shape: ARRAY [INTEGER]
 			l_new_strides: ARRAY [INTEGER]
 			l_new_offset: INTEGER
+			l_children: ARRAYED_LIST [ET_TENSOR [G]]
 		do
 			if start_index < 0 then
 				l_start := shape [a_dim] + start_index + 1
@@ -2153,6 +2258,14 @@ feature -- View Operations
 			l_new_offset := offset + (l_start - 1) * strides [a_dim]
 
 			create Result.make_from_pointer (data, l_new_offset, l_new_shape, l_new_strides)
+			
+			if requires_grad then
+				Result.set_requires_grad (True)
+				create l_children.make (1)
+				l_children.extend (Current)
+				Result.set_prev (l_children)
+				Result.set_backward_fn (agent backward_slice_step (Result, Current, a_dim, start_index, end_index, step))
+			end
 		end
 
 feature -- Implementation
@@ -2162,8 +2275,18 @@ feature -- Implementation
 		require
 			contiguous: is_contiguous
 			compatible_size: (create {ET_TENSOR [G]}.make_zeros (a_new_shape)).numel = numel
+		local
+			l_children: ARRAYED_LIST [ET_TENSOR [G]]
 		do
 			create Result.make_from_pointer (data, offset, a_new_shape.deep_twin, (create {ET_TENSOR [G]}.make_zeros (a_new_shape)).strides)
+			
+			if requires_grad then
+				Result.set_requires_grad (True)
+				create l_children.make (1)
+				l_children.extend (Current)
+				Result.set_prev (l_children)
+				Result.set_backward_fn (agent backward_view (Result, Current, shape.deep_twin))
+			end
 		ensure
 			same_data: Result.data = data
 		end
@@ -2172,6 +2295,8 @@ feature -- Implementation
 			-- Return a tensor with `a_new_shape`. Copies if not contiguous.
 		require
 			compatible_size: (create {ET_TENSOR [G]}.make_zeros (a_new_shape)).numel = numel
+		local
+			l_children: ARRAYED_LIST [ET_TENSOR [G]]
 		do
 			if is_contiguous then
 				Result := view (a_new_shape)
@@ -2179,6 +2304,14 @@ feature -- Implementation
 				-- Copy data to new contiguous tensor
 				create Result.make_zeros (a_new_shape)
 				copy_to_contiguous (Result.data)
+				
+				if requires_grad then
+					Result.set_requires_grad (True)
+					create l_children.make (1)
+					l_children.extend (Current)
+					Result.set_prev (l_children)
+					Result.set_backward_fn (agent backward_view (Result, Current, shape.deep_twin))
+				end
 			end
 		end
 
@@ -2192,6 +2325,7 @@ feature -- Implementation
 		local
 			l_new_shape: ARRAY [INTEGER]
 			l_new_offset: INTEGER
+			l_children: ARRAYED_LIST [ET_TENSOR [G]]
 		do
 			l_new_shape := shape.deep_twin
 			l_new_shape [a_dim] := length
@@ -2199,6 +2333,14 @@ feature -- Implementation
 			l_new_offset := offset + (start_index - 1) * strides [a_dim]
 
 			create Result.make_from_pointer (data, l_new_offset, l_new_shape, strides.deep_twin)
+			
+			if requires_grad then
+				Result.set_requires_grad (True)
+				create l_children.make (1)
+				l_children.extend (Current)
+				Result.set_prev (l_children)
+				Result.set_backward_fn (agent backward_narrow (Result, Current, a_dim, start_index, length))
+			end
 		ensure
 			same_data: Result.data = data
 		end
@@ -2212,6 +2354,7 @@ feature -- Implementation
 			l_new_shape: ARRAY [INTEGER]
 			l_new_strides: ARRAY [INTEGER]
 			i: INTEGER
+			l_children: ARRAYED_LIST [ET_TENSOR [G]]
 		do
 			create l_new_shape.make_empty
 			create l_new_strides.make_empty
@@ -2225,6 +2368,14 @@ feature -- Implementation
 			end
 
 			create Result.make_from_pointer (data, offset, l_new_shape, l_new_strides)
+			
+			if requires_grad then
+				Result.set_requires_grad (True)
+				create l_children.make (1)
+				l_children.extend (Current)
+				Result.set_prev (l_children)
+				Result.set_backward_fn (agent backward_squeeze (Result, Current, a_dim))
+			end
 		ensure
 			same_data: Result.data = data
 		end
@@ -2237,6 +2388,7 @@ feature -- Implementation
 			l_new_shape: ARRAY [INTEGER]
 			l_new_strides: ARRAY [INTEGER]
 			i: INTEGER
+			l_children: ARRAYED_LIST [ET_TENSOR [G]]
 		do
 			-- Array insert_at is not standard?
 			-- Let's manual copy
@@ -2263,6 +2415,14 @@ feature -- Implementation
 			end
 
 			create Result.make_from_pointer (data, offset, l_new_shape, l_new_strides)
+
+			if requires_grad then
+				Result.set_requires_grad (True)
+				create l_children.make (1)
+				l_children.extend (Current)
+				Result.set_prev (l_children)
+				Result.set_backward_fn (agent backward_unsqueeze (Result, Current, a_dim))
+			end
 		ensure
 			same_data: Result.data = data
 		end
@@ -2305,6 +2465,9 @@ feature -- Implementation
 		do
 			Result := 0
 			from i := 1 until i > indices.count loop
+				if indices [i] < 1 or indices [i] > shape [i] then
+					io.put_string_32 ({STRING_32} "      [FATAL] Tensor index out of bounds on dim " + i.out.to_string_32 + {STRING_32} ". Index: " + indices[i].out.to_string_32 + {STRING_32} ", Shape Limit: " + shape[i].out.to_string_32 + {STRING_32} "%N")
+				end
 				Result := Result + (indices [i] - 1) * strides [i]
 				i := i + 1
 			end
@@ -2323,9 +2486,14 @@ feature -- Implementation
 	recursive_apply (a_dim: INTEGER; indices: ARRAY [INTEGER]; a, b, res: ET_TENSOR [G]; op: FUNCTION [G, G, G])
 		local
 			i: INTEGER
+			l_val_a, l_val_b: G
 		do
 			if a_dim > res.shape.count then
-				res.put (op.item ([a.item (indices), b.item (indices)]), indices)
+				l_val_a := a.item (indices)
+				l_val_b := b.item (indices)
+				if attached op.item ([l_val_a, l_val_b]) as v_res then
+					res.put (v_res, indices)
+				end
 			else
 				from i := 1 until i > res.shape [a_dim] loop
 					indices [a_dim] := i
@@ -2357,25 +2525,7 @@ feature -- Implementation
 			l_current_offset := a_linear_offset
 			if a_dim > shape.count then
 				l_val := item (indices)
-
-				if ({G}).type_id = ({REAL_32}).type_id then
-					if attached {REAL_32} l_val as r32 then
-						numeric.put (a_ptr, l_current_offset, numeric.from_real_64(r32.to_double))
-					end
-				elseif ({G}).type_id = ({REAL_64}).type_id then
-					if attached {REAL_64} l_val as r64 then
-						numeric.put (a_ptr, l_current_offset, numeric.from_real_64(r64))
-					end
-				elseif ({G}).type_id = ({INTEGER_32}).type_id then
-					if attached {INTEGER_32} l_val as i32 then
-						numeric.put (a_ptr, l_current_offset, numeric.from_integer(i32))
-					end
-				elseif ({G}).type_id = ({INTEGER_64}).type_id then
-					if attached {INTEGER_64} l_val as i64 then
-						numeric.put (a_ptr, l_current_offset, numeric.from_integer(i64.to_integer_32))
-					end
-				end
-
+				numeric.put (a_ptr, l_current_offset, l_val)
 				l_current_offset := l_current_offset + numeric.element_size
 			else
 				from i := 1 until i > shape [a_dim] loop

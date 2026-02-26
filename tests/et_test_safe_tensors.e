@@ -19,10 +19,6 @@ feature -- Tests
 			header_size: INTEGER_64
 			tol: REAL_64
 			val: REAL_32
-			i: INTEGER
-			
-			-- Mock floats [1.5, 2.5, 3.5, 4.5] (Little endian IEEE754)
-			raw_floats: ARRAY [NATURAL_8]
 			mp: MANAGED_POINTER
 		do
 			print ("  [TEST] Safetensors MMAP Zero-Copy Load... ")

@@ -30,29 +30,28 @@ feature -- Access
     c_proj: ET_NN_LINEAR
     dropout: REAL_64
 
-    parameters: LIST [ET_VALUE]
+    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]
             -- Learnable parameters.
         do
-            create {LINKED_LIST [ET_VALUE]} Result.make
+            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]} Result.make
             Result.append (c_fc.parameters)
             Result.append (c_proj.parameters)
         end
 
 feature -- Operation
 
-    forward (x: LIST [ET_VALUE]): LIST [ET_VALUE]
+    forward (x: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
             -- Apply MLP: proj(gelu(fc(x))).
-        
         local
-            h: LIST [ET_VALUE]
-            h_gelu: LINKED_LIST [ET_VALUE]
+            h, h_act: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
         do
             h := c_fc.forward (x)
-            create h_gelu.make
-            across h as val loop
-                h_gelu.extend (val.relu)
-            end
-            Result := c_proj.forward (h_gelu)
+            
+            -- Re-using the Karpathy implementation `gelu`. If `gelu` isn't available, `relu` is assumed present.
+            -- But we know ET_TENSOR added gelu/relu. We use gelu for MicroGPT.
+            h_act := h.gelu
+            
+            Result := c_proj.forward (h_act)
         end
 
 end

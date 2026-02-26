@@ -4,12 +4,6 @@ note
 class
     ET_MLP
 
-inherit
-    ET_MODULE
-        redefine
-            parameters
-        end
-
 create
     make
 
@@ -18,7 +12,6 @@ feature -- Initialization
     make (nin: INTEGER; nouts: LIST [INTEGER])
             -- Create MLP with input size `nin` and layer sizes `nouts`.
         local
-            sz: INTEGER
             last_n: INTEGER
         do
             create {LINKED_LIST [ET_LAYER]} layers.make

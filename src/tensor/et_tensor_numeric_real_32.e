@@ -64,6 +64,8 @@ feature -- Operations
 
 	mul_elements (x, y: ET_NUMERIC_ELEMENT [REAL_32]): ET_NUMERIC_ELEMENT [REAL_32]
 		do
+            -- Add temporary debug trace to detect silent faults
+             -- io.put_string_32 ({STRING_32} "      [NUMERIC] Mul elements...%N")
 			Result := x.mul (y)
 		end
 

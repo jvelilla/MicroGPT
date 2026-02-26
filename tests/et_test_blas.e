@@ -14,8 +14,6 @@ feature -- Initialization
 
 	on_prepare
 			-- Called before each test.
-		local
-			l_env: ET_ENV
 		do
 --			create l_env
 --			-- When running from EIFGENs\tests\W_code, we traverse up 3 levels to project root.
@@ -29,7 +27,6 @@ feature -- Tests
 			A, B, C: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
 			tol: REAL_64
 			val: REAL_32
-			i: INTEGER
 		do
 			print ("  [TEST] ET_BLAS S-GEMM Square (128x128)... ")
 			tol := 1.0e-3 -- Float32 precision tolerance

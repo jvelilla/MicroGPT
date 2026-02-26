@@ -21,83 +21,125 @@ feature -- Initialization
             -- `vocab_size`: number of embeddings.
             -- `n_embd`: embedding dimension.
         local
-            rng: RANDOM
-            i: INTEGER
-            u1, u2, z0: REAL_64
+            t_scale: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            numeric_helper: ET_TENSOR_NUMERIC_REAL_32
         do
-            rng := shared_rng
+            create numeric_helper
+            create weight.make_randn (<<vocab_size, n_embd>>)
             
-            create {LINKED_LIST [ET_VALUE]} weight.make
-            
-            from i := 1 until i > vocab_size * n_embd loop
-                rng.forth
-                u1 := rng.double_item
-                rng.forth
-                u2 := rng.double_item
-                
-                -- Box-Muller transform
-                z0 := {DOUBLE_MATH}.sqrt (-2.0 * {DOUBLE_MATH}.log (u1)) * {DOUBLE_MATH}.cosine (2.0 * {DOUBLE_MATH}.pi * u2)
-                
-                weight.extend (create {ET_VALUE}.make (z0 * 0.08))
-                i := i + 1
-            end
+            -- Scale weights by 0.08
+            create t_scale.make_full (<<1>>, numeric_helper.from_real_64 (0.08))
+            weight := weight * t_scale
+            weight.set_requires_grad (True)
             
             num_embeddings := vocab_size
             embedding_dim := n_embd
         end
 
-    feature {NONE} -- Internals
-
-    shared_rng: RANDOM
-        once
-            create Result.make
-            Result.set_seed (42) 
-        end
-
 feature -- Access
 
-    weight: LINKED_LIST [ET_VALUE]
+    weight: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
     num_embeddings, embedding_dim: INTEGER
 
-    parameters: LIST [ET_VALUE]
+    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]
             -- Learnable weight parameters.
         do
-            create {LINKED_LIST [ET_VALUE]} Result.make
-            Result.append (weight)
+            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]} Result.make
+            Result.extend (weight)
         end
 
 feature -- Operation
 
-    forward (idx: INTEGER): LIST [ET_VALUE]
-            -- Retrieve embedding vector for index `idx`.
-        require
-            valid_index: idx >= 1 and idx <= num_embeddings -- 1-based index
+    forward (idx: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            -- Retrieve embedding vectors for indices `idx`.
+            -- `idx` shape: [batch_size, seq_len] or [seq_len]
+            -- Returns shape: [batch_size, seq_len, embedding_dim] or [seq_len, embedding_dim]
         local
-            res: LINKED_LIST [ET_VALUE]
-            w_arr: ARRAYED_LIST [ET_VALUE]
-            start_pos: INTEGER
-            i: INTEGER
+            res_shape: ARRAY [INTEGER]
+            i, j, flat_idx, w_offset, res_offset: INTEGER
+            numeric_i32: ET_TENSOR_NUMERIC_INTEGER_32
+            numeric_r32: ET_TENSOR_NUMERIC_REAL_32
+            val: INTEGER_32
+            elem_size: INTEGER
+            w_stride_0: INTEGER
         do
-            create res.make
-            create w_arr.make_from_iterable (weight)
+            create res_shape.make_from_array (idx.shape)
+            res_shape.force (embedding_dim, res_shape.count + 1)
             
-            -- Get row `idx`
-            -- row size is `embedding_dim`
-            start_pos := (idx - 1) * embedding_dim
+            create Result.make_zeros (res_shape)
+            create numeric_i32
+            create numeric_r32
+            elem_size := 4
             
-            from i := 1 until i > embedding_dim loop
-                res.extend (w_arr [start_pos + i])
+            w_stride_0 := embedding_dim -- elements per row
+            -- Gather embeddings efficiently
+            from i := 0 until i >= idx.numel loop
+                val := numeric_i32.read (idx.data, idx.offset + i * elem_size).item
+                if val > 0 and then val <= num_embeddings then 
+                    flat_idx := val.to_integer_32 - 1
+                    
+                    w_offset := weight.offset + flat_idx * w_stride_0 * elem_size
+                    res_offset := Result.offset + i * embedding_dim * elem_size
+                    from j := 0 until j >= w_stride_0 loop
+                        numeric_r32.put (Result.data, res_offset + j * elem_size, numeric_r32.read (weight.data, w_offset + j * elem_size))
+                        j := j + 1
+                    end
+                end
+                
                 i := i + 1
             end
             
-            Result := res
-        ensure
-            correct_size: Result.count = embedding_dim
+            if Result.requires_grad or weight.requires_grad then
+                Result.set_requires_grad (True)
+                Result.set_backward_fn (agent backward_embedding (Result, Current, idx))
+            end
+        end
+
+feature {NONE} -- Autograd
+
+    backward_embedding (res: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]; cur: ET_EMBEDDING; idx: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]])
+        local
+            g: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            grad_w: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            i, j, flat_idx, w_offset, res_offset: INTEGER
+            numeric_i32: ET_TENSOR_NUMERIC_INTEGER_32
+            numeric_r32: ET_TENSOR_NUMERIC_REAL_32
+            val: INTEGER_32
+            elem_size, w_stride_0: INTEGER
+            l_gv, l_wv: REAL_32
+        do
+            if attached res.grad as l_g then
+                g := l_g
+                if cur.weight.requires_grad then
+                    create grad_w.make_zeros (cur.weight.shape)
+                    create numeric_i32
+                    create numeric_r32
+                    elem_size := 4
+                    w_stride_0 := cur.embedding_dim
+
+                    from i := 0 until i >= idx.numel loop
+                        val := numeric_i32.read (idx.data, idx.offset + i * elem_size).item
+                        if val > 0 and then val <= cur.num_embeddings then
+                            flat_idx := val.to_integer_32 - 1
+                            w_offset := grad_w.offset + flat_idx * w_stride_0 * elem_size
+                            res_offset := g.offset + i * cur.embedding_dim * elem_size
+
+                            from j := 0 until j >= w_stride_0 loop
+                                l_gv := numeric_r32.read (g.data, res_offset + j * elem_size).item
+                                l_wv := numeric_r32.read (grad_w.data, w_offset + j * elem_size).item
+                                numeric_r32.put (grad_w.data, w_offset + j * elem_size, numeric_r32.from_real_64 ((l_wv + l_gv).to_double))
+                                j := j + 1
+                            end
+                        end
+                        i := i + 1
+                    end
+                    cur.weight.accumulate_grad (grad_w)
+                end
+            end
         end
 
 invariant
     valid_dims: embedding_dim > 0
     valid_num_embeddings: num_embeddings > 0
-    weights_sized: weight.count = num_embeddings * embedding_dim
 
 end

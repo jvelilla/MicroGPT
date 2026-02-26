@@ -5,11 +5,6 @@ class
     ET_NEURON
 
 inherit
-    ET_MODULE
-        redefine
-            parameters
-        end
-
     DOUBLE_MATH
         export
             {NONE} all
@@ -92,8 +87,6 @@ feature -- Operation
             same_size: x.count = w.count
         local
             act: ET_VALUE
-            wi, xi: ET_VALUE
-            cursor_w, cursor_x: CURSOR
         do
             act := b
 

@@ -12,8 +12,8 @@ feature {NONE} -- Initialization
     make
             -- Run application.
         local
-            config: MICROGPT_CONFIG
-            trainer: TRAINER
+            config: ET_MICROGPT_CONFIG
+            trainer: ET_TRAINER
         do
             create config.make_from_args
             if config.mode.is_equal ("test") then

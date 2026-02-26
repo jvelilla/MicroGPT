@@ -2,14 +2,24 @@ note
 	description: "Tag class representing a numeric element in an ET_TENSOR."
 
 expanded class
-	ET_NUMERIC_ELEMENT [G -> NUMERIC]
+	ET_NUMERIC_ELEMENT [G -> NUMERIC create default_create end]
 
 inherit
 	ET_TENSOR_ELEMENT
+		redefine
+			default_create
+		end
 
 feature -- Access
 
 	item: G
+
+feature {NONE} -- Initialization
+
+	default_create
+		do
+			create item
+		end
 
 feature -- Element Change
 

@@ -4,12 +4,6 @@ note
 class
     ET_LAYER
 
-inherit
-    ET_MODULE
-        redefine
-            parameters
-        end
-
 create
     make
 

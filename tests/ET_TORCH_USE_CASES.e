@@ -287,7 +287,7 @@ feature -- Tests
     arithmetic_operations
             -- 4.1 Arithmetic
         local
-            a, b, element_add, element_mul, dot_product: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
+            a, b, element_add, element_mul: ET_TENSOR [ET_NUMERIC_ELEMENT [INTEGER_32]]
         do
             print ("%N[4.1] Arithmetic%N")
 
@@ -450,7 +450,6 @@ feature -- Tests
             v, mv_result: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
             bA, bB, bC: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
             At, AtB: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
-            l_elem: ET_NUMERIC_ELEMENT [REAL_32]
         do
             print ("%N[5.1] Matrix Operations%N")
 

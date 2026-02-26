@@ -22,32 +22,21 @@ feature -- Initialization
             -- `outc`: output channels.
             -- `bias`: whether to include bias term.
         local
-            rng: RANDOM
-            i: INTEGER
-            u1, u2, z0: REAL_64
+            t_scale: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+            numeric_helper: ET_TENSOR_NUMERIC_REAL_32
         do
-            rng := shared_rng
+            create numeric_helper
             
-            create {LINKED_LIST [ET_VALUE]} weight.make
-            
-            from i := 1 until i > inc * outc loop
-                rng.forth
-                u1 := rng.double_item
-                rng.forth
-                u2 := rng.double_item
-                
-                -- Box-Muller transform
-                z0 := {DOUBLE_MATH}.sqrt (-2.0 * {DOUBLE_MATH}.log (u1)) * {DOUBLE_MATH}.cosine (2.0 * {DOUBLE_MATH}.pi * u2)
-                
-                weight.extend (create {ET_VALUE}.make (z0 * 0.08)) -- Gaussian(0, 0.08)
-                i := i + 1
-            end
+            -- PyTorch Linear uses weight shape [out_features, in_features]
+            create weight.make_randn (<<outc, inc>>)
+            create t_scale.make_full (<<1>>, numeric_helper.from_real_64 (0.08))
+            weight := weight * t_scale
+            weight.set_requires_grad (True)
             
             if bias then
-                create {LINKED_LIST [ET_VALUE]} b.make
-                from i := 1 until i > outc loop
-                    b.extend (create {ET_VALUE}.make (0.0))
-                    i := i + 1
+                create b.make_zeros (<<outc>>)
+                if attached b as bias_vec then
+                    bias_vec.set_requires_grad (True)
                 end
             end
             
@@ -55,74 +44,41 @@ feature -- Initialization
             out_channels := outc
         end
 
-    feature {NONE} -- Internals
-
-    shared_rng: RANDOM
-        once
-            create Result.make
-            Result.set_seed (42) 
-        end
-
 feature -- Access
 
-    weight: LIST [ET_VALUE]
-    b: detachable LIST [ET_VALUE]
+    weight: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
+    b: detachable ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
     in_channels, out_channels: INTEGER
 
-    parameters: LIST [ET_VALUE]
+    parameters: LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]
             -- Learnable parameters (weights + optional bias).
         do
-            create {LINKED_LIST [ET_VALUE]} Result.make
-            Result.append (weight)
+            create {LINKED_LIST [ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]]} Result.make
+            Result.extend (weight)
             if attached b as bias_vec then
-                Result.append (bias_vec)
+                Result.extend (bias_vec)
             end
         end
 
 feature -- Operation
 
-    forward (x: LIST [ET_VALUE]): LIST [ET_VALUE]
+    forward (x: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]): ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_32]]
             -- Apply linear transformation to `x`.
+            -- `x` shape: [..., in_channels]
         require
-            input_size: x.count = in_channels
-        local
-            y: LINKED_LIST [ET_VALUE]
-            i, j: INTEGER
-            sum: ET_VALUE
-            x_arr: ARRAYED_LIST [ET_VALUE]
-            w_arr: ARRAYED_LIST [ET_VALUE]
-            b_arr: ARRAYED_LIST [ET_VALUE]
+            input_size: x.shape [x.shape.count] = in_channels
         do
-            create y.make
-            create x_arr.make_from_iterable (x)
-            create w_arr.make_from_iterable (weight)
+            -- y = x @ W^T + b
+            Result := x.matmul (weight.transpose (1, 2))
             
             if attached b as bias_vec then
-                create b_arr.make_from_iterable (bias_vec)
+                Result := Result + bias_vec
             end
-            
-            from j := 0 until j >= out_channels loop
-                sum := create {ET_VALUE}.make (0.0)
-                if attached b_arr as ba then
-                    sum := ba [j + 1]
-                end
-                
-                from i := 0 until i >= in_channels loop
-                    sum := sum + (x_arr [i + 1] * w_arr [j * in_channels + i + 1])
-                    i := i + 1
-                end
-                
-                y.extend (sum)
-                j := j + 1
-            end
-            
-            Result := y
         ensure
-            output_matches_out_channels: Result.count = out_channels
+            output_matches_out_channels: Result.shape [Result.shape.count] = out_channels
         end
 
 invariant
-    weights_sized: weight.count = in_channels * out_channels
-    bias_sized: attached b as bias implies bias.count = out_channels
+    weights_sized: weight.shape [1] = out_channels and weight.shape [2] = in_channels
 
 end
