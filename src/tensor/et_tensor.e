@@ -361,8 +361,11 @@ feature -- Autograd Element Change
 
 	set_requires_grad (b: BOOLEAN)
 			-- Set whether this tensor should compute gradients.
+			-- Ignored when grad is globally disabled (no_grad mode).
 		do
-			requires_grad := b
+			if {ET_TORCH}.is_grad_enabled then
+				requires_grad := b
+			end
 		end
 
 	set_grad (g: ET_TENSOR [G])
@@ -379,8 +382,11 @@ feature -- Autograd Element Change
 
 	set_prev (a_prev: ARRAYED_LIST [ET_TENSOR [G]])
 			-- Set children tensors for backprop tracking.
+			-- Skipped in no_grad mode to avoid building computation graph.
 		do
-			prev := a_prev
+			if {ET_TORCH}.is_grad_enabled then
+				prev := a_prev
+			end
 		end
 
 	set_op_code (op: INTEGER)
@@ -389,8 +395,12 @@ feature -- Autograd Element Change
 		end
 
 	set_backward_fn (fn: PROCEDURE [TUPLE])
+			-- Set the backward function for this tensor.
+			-- Skipped in no_grad mode to avoid autograd overhead.
 		do
-			backward_fn := fn
+			if {ET_TORCH}.is_grad_enabled then
+				backward_fn := fn
+			end
 		end
 
 feature -- Element Change

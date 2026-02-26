@@ -220,6 +220,9 @@ feature -- Operation
             elem_i32: ET_NUMERIC_ELEMENT [INTEGER_32]
             k: INTEGER
         do
+            -- Disable gradient computation for inference (like torch.no_grad())
+            {ET_TORCH}.no_grad
+
             create curr_idx.make (idx.numel + max_new_tokens)
             create numeric_i32
 
@@ -279,6 +282,9 @@ feature -- Operation
 
                 Result := curr_idx
             end
+
+            -- Re-enable gradient computation for training
+            {ET_TORCH}.enable_grad
         end
 
     sample_token (logits: ET_TENSOR [ET_NUMERIC_ELEMENT [REAL_64]]; temperature: REAL_64): INTEGER
